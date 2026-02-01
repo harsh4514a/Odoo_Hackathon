@@ -16,9 +16,10 @@ export async function GET(
     const budget = await prisma.budget.findUnique({
       where: { id },
       include: {
-        analyticalAccount: true,
-        revisionHistory: {
-          orderBy: { revisedAt: 'desc' },
+        budgetLines: {
+          include: {
+            analyticalAccount: true,
+          },
         },
       },
     });
@@ -47,7 +48,6 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    // Get current budget for revision history
     const currentBudget = await prisma.budget.findUnique({
       where: { id },
     });
@@ -56,19 +56,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Budget not found' }, { status: 404 });
     }
 
-    // If amount is changing, create revision history
-    const currentAmount = currentBudget.revisedAmount || currentBudget.amount;
-    const newAmount = body.revisedAmount || body.amount;
-
-    if (newAmount && parseFloat(newAmount.toString()) !== parseFloat(currentAmount.toString())) {
-      await prisma.budgetRevision.create({
-        data: {
-          budgetId: id,
-          previousAmount: currentAmount,
-          newAmount: newAmount,
-          reason: body.revisionReason || 'Budget revision',
-          revisedBy: user.name,
-        },
+    // Update budget lines - delete existing and create new ones
+    if (body.budgetLines) {
+      await prisma.budgetLine.deleteMany({
+        where: { budgetId: id },
       });
     }
 
@@ -76,15 +67,27 @@ export async function PUT(
       where: { id },
       data: {
         name: body.name,
-        amount: body.amount,
-        revisedAmount: body.revisedAmount,
+        periodStart: body.periodStart ? new Date(body.periodStart) : undefined,
+        periodEnd: body.periodEnd ? new Date(body.periodEnd) : undefined,
+        status: body.status,
+        stage: body.stage,
         notes: body.notes,
+        revisedBudgetId: body.revisedBudgetId,
         isActive: body.isActive,
+        budgetLines: body.budgetLines ? {
+          create: body.budgetLines.map((line: any) => ({
+            analyticalAccountId: line.analyticalAccountId,
+            type: line.type || 'EXPENSE',
+            budgetedAmount: line.budgetedAmount,
+            achievedAmount: line.achievedAmount || 0,
+          })),
+        } : undefined,
       },
       include: {
-        analyticalAccount: true,
-        revisionHistory: {
-          orderBy: { revisedAt: 'desc' },
+        budgetLines: {
+          include: {
+            analyticalAccount: true,
+          },
         },
       },
     });

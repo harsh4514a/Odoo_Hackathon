@@ -16,7 +16,12 @@ interface Contact {
   type: 'CUSTOMER' | 'VENDOR' | 'BOTH';
   email: string | null;
   phone: string | null;
+  address: string | null;
   city: string | null;
+  state: string | null;
+  pincode: string | null;
+  creditLimit: string | null;
+  paymentTerms: number | null;
   accountStatus: 'ACTIVE' | 'PENDING' | 'NO_ACCOUNT';
 }
 
@@ -173,12 +178,12 @@ export default function ContactsPage() {
       type: contact.type,
       email: contact.email || '',
       phone: contact.phone || '',
-      address: '',
+      address: contact.address || '',
       city: contact.city || '',
-      state: '',
-      pincode: '',
-      creditLimit: '',
-      paymentTerms: '30',
+      state: contact.state || '',
+      pincode: contact.pincode || '',
+      creditLimit: contact.creditLimit || '',
+      paymentTerms: contact.paymentTerms?.toString() || '30',
     });
     setIsModalOpen(true);
   };

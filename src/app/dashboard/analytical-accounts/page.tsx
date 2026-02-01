@@ -1,32 +1,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Building } from 'lucide-react';
+import { Plus, Edit, Trash2, Home, ArrowLeft, Archive } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Modal } from '@/components/ui/Modal';
 import { LoadingSpinner, EmptyState } from '@/components/ui/States';
-import { Input, Textarea, Select } from '@/components/ui/FormFields';
+import { Input } from '@/components/ui/FormFields';
+import { useRouter } from 'next/navigation';
 
 interface AnalyticalAccount {
   id: string;
   code: string;
   name: string;
-  description: string | null;
-  parentId: string | null;
-  parent: { code: string; name: string } | null;
-  _count: { budgets: number; products: number };
+  status: 'NEW' | 'CONFIRMED' | 'ARCHIVED';
 }
 
+type TabType = 'CONFIRMED' | 'ARCHIVED';
+
 export default function AnalyticalAccountsPage() {
+  const router = useRouter();
   const [accounts, setAccounts] = useState<AnalyticalAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<AnalyticalAccount | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('CONFIRMED');
   const [formData, setFormData] = useState({
-    code: '',
     name: '',
-    description: '',
-    parentId: '',
   });
 
   const fetchAccounts = async () => {
@@ -34,9 +33,9 @@ export default function AnalyticalAccountsPage() {
     try {
       const res = await fetch('/api/analytical-accounts');
       const data = await res.json();
-      setAccounts(data.analyticalAccounts);
+      setAccounts(data.analyticalAccounts || []);
     } catch (error) {
-      toast.error('Failed to fetch cost centers');
+      toast.error('Failed to fetch analytics');
     } finally {
       setLoading(false);
     }
@@ -58,8 +57,9 @@ export default function AnalyticalAccountsPage() {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
-          parentId: formData.parentId || null,
+          name: formData.name,
+          code: formData.name.toUpperCase().replace(/\s+/g, '_').substring(0, 10),
+          status: editingAccount ? editingAccount.status : 'CONFIRMED',
         }),
       });
 
@@ -68,7 +68,7 @@ export default function AnalyticalAccountsPage() {
         throw new Error(data.error);
       }
 
-      toast.success(editingAccount ? 'Cost center updated' : 'Cost center created');
+      toast.success(editingAccount ? 'Analytic updated' : 'Analytic created');
       setIsModalOpen(false);
       resetForm();
       fetchAccounts();
@@ -78,123 +78,187 @@ export default function AnalyticalAccountsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this cost center?')) return;
+    if (!confirm('Are you sure you want to delete this analytic?')) return;
     
     try {
       const res = await fetch(`/api/analytical-accounts/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete');
-      toast.success('Cost center deleted');
+      toast.success('Analytic deleted');
       fetchAccounts();
     } catch (error) {
-      toast.error('Failed to delete cost center');
+      toast.error('Failed to delete analytic');
+    }
+  };
+
+  const handleStatusChange = async (account: AnalyticalAccount, newStatus: TabType) => {
+    try {
+      const res = await fetch(`/api/analytical-accounts/${account.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: account.name,
+          code: account.code,
+          status: newStatus,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to update status');
+      toast.success(`Moved to ${newStatus.toLowerCase()}`);
+      setActiveTab(newStatus); // Switch to the target tab
+      fetchAccounts();
+    } catch (error) {
+      toast.error('Failed to update status');
     }
   };
 
   const resetForm = () => {
-    setFormData({
-      code: '',
-      name: '',
-      description: '',
-      parentId: '',
-    });
+    setFormData({ name: '' });
     setEditingAccount(null);
   };
 
   const openEditModal = (account: AnalyticalAccount) => {
     setEditingAccount(account);
-    setFormData({
-      code: account.code,
-      name: account.name,
-      description: account.description || '',
-      parentId: account.parentId || '',
-    });
+    setFormData({ name: account.name });
     setIsModalOpen(true);
   };
 
+  // Filter accounts by status/tab
+  const filteredAccounts = accounts.filter(account => {
+    // If status field doesn't exist or is NEW, treat as CONFIRMED
+    const status = (account as any).status || 'CONFIRMED';
+    const effectiveStatus = status === 'NEW' ? 'CONFIRMED' : status;
+    return effectiveStatus === activeTab;
+  });
+
+  const tabs: { key: TabType; label: string }[] = [
+    { key: 'CONFIRMED', label: 'Confirm' },
+    { key: 'ARCHIVED', label: 'Archived' },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Cost Centers</h1>
-          <p className="text-gray-500 dark:text-gray-400">Manage analytical accounts for budget tracking</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics Master</h1>
+        <div className="flex gap-2">
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Home className="w-4 h-4" />
+            Home
+          </button>
+          <button
+            onClick={() => router.back()}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setIsModalOpen(true);
-          }}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Cost Center
-        </button>
       </div>
 
-      {/* Cards Grid */}
-      {loading ? (
-        <LoadingSpinner />
-      ) : accounts.length === 0 ? (
-        <div className="card p-8">
-          <EmptyState
-            title="No cost centers found"
-            description="Create cost centers to track budgets and expenses."
-            action={
-              <button onClick={() => setIsModalOpen(true)} className="btn-primary">
-                Add Cost Center
+      {/* Main Card */}
+      <div className="card">
+        {/* Tabs */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                {tab.label}
               </button>
-            }
-          />
+            ))}
+          </div>
+          <button
+            onClick={() => {
+              resetForm();
+              setIsModalOpen(true);
+            }}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            New
+          </button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {accounts.map((account) => (
-            <div key={account.id} className="card p-6 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center">
-                  <Building className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => openEditModal(account)}
-                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                  >
-                    <Edit className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(account.id)}
-                    className="p-1 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+
+        {/* Table */}
+        <div className="p-4">
+          {loading ? (
+            <LoadingSpinner />
+          ) : filteredAccounts.length === 0 ? (
+            <EmptyState
+              title={`No ${activeTab.toLowerCase()} analytics`}
+              description="Click New to add an analytic."
+              action={
+                <button onClick={() => setIsModalOpen(true)} className="btn-primary">
+                  Add Analytic
+                </button>
+              }
+            />
+          ) : (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+              {/* Table Header */}
+              <div className="bg-gray-50 dark:bg-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <span className="font-medium text-gray-700 dark:text-gray-300">
+                  {activeTab === 'CONFIRMED' ? 'Confirm Name' : 'Archived Name'}
+                </span>
               </div>
               
-              <h3 className="font-semibold text-gray-900 dark:text-white">{account.name}</h3>
-              <p className="text-sm text-primary-600 font-medium">{account.code}</p>
-              {account.description && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{account.description}</p>
-              )}
-              
-              {account.parent && (
-                <p className="text-xs text-gray-400 mt-2">
-                  Parent: {account.parent.code} - {account.parent.name}
-                </p>
-              )}
-              
-              <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                <div>
-                  <p className="text-xs text-gray-500">Budgets</p>
-                  <p className="font-semibold">{account._count.budgets}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Products</p>
-                  <p className="font-semibold">{account._count.products}</p>
-                </div>
+              {/* Table Rows */}
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {filteredAccounts.map((account) => (
+                  <div
+                    key={account.id}
+                    className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    <span className="text-primary-600 dark:text-primary-400 font-medium">
+                      {account.name}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {activeTab === 'CONFIRMED' && (
+                        <button
+                          onClick={() => handleStatusChange(account, 'ARCHIVED')}
+                          className="text-xs px-2 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                        >
+                          Archive
+                        </button>
+                      )}
+                      {activeTab === 'ARCHIVED' && (
+                        <button
+                          onClick={() => handleStatusChange(account, 'CONFIRMED')}
+                          className="text-xs px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-800"
+                        >
+                          Restore
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openEditModal(account)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                      >
+                        <Edit className="w-4 h-4 text-gray-500" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(account.id)}
+                        className="p-1 hover:bg-red-100 dark:hover:bg-red-900 rounded"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
         </div>
-      )}
+      </div>
 
       {/* Modal */}
       <Modal
@@ -203,54 +267,62 @@ export default function AnalyticalAccountsPage() {
           setIsModalOpen(false);
           resetForm();
         }}
-        title={editingAccount ? 'Edit Cost Center' : 'Add Cost Center'}
+        title={editingAccount ? 'Edit Analytic' : 'Add Analytic'}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="Code *"
-            value={formData.code}
-            onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-            placeholder="e.g., PROD"
-            required
-          />
-
-          <Input
-            label="Name *"
+            label="Analytic Name *"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="e.g., Production"
+            placeholder="e.g., Deepawali, Marriage Session"
             required
           />
 
-          <Textarea
-            label="Description"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          />
-
-          <Select
-            label="Parent Cost Center"
-            value={formData.parentId}
-            onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
-            options={accounts
-              .filter((a) => a.id !== editingAccount?.id)
-              .map((a) => ({ value: a.id, label: `${a.code} - ${a.name}` }))}
-          />
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => {
-                setIsModalOpen(false);
-                resetForm();
-              }}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary">
-              {editingAccount ? 'Update' : 'Create'}
-            </button>
+          <div className="flex justify-between items-center gap-3 pt-4 border-t">
+            <div>
+              {editingAccount && editingAccount.status !== 'ARCHIVED' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleStatusChange(editingAccount, 'ARCHIVED');
+                    setIsModalOpen(false);
+                    resetForm();
+                  }}
+                  className="btn-danger flex items-center gap-2"
+                >
+                  <Archive className="w-4 h-4" />
+                  Archive
+                </button>
+              )}
+              {editingAccount && editingAccount.status === 'ARCHIVED' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleStatusChange(editingAccount, 'CONFIRMED');
+                    setIsModalOpen(false);
+                    resetForm();
+                  }}
+                  className="btn-secondary flex items-center gap-2"
+                >
+                  Restore
+                </button>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  resetForm();
+                }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary">
+                {editingAccount ? 'Update' : 'Create'}
+              </button>
+            </div>
           </div>
         </form>
       </Modal>

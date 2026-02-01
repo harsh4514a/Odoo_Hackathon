@@ -13,13 +13,13 @@ import { useSearchParams } from 'next/navigation';
 interface Payment {
   id: string;
   paymentNumber: string;
-  type: 'INBOUND' | 'OUTBOUND';
+  type: 'INCOMING' | 'OUTGOING';
   contactId: string;
   contact: { name: string };
   invoiceId: string | null;
-  invoice: { invoiceNumber: string; total: string } | null;
+  invoice: { invoiceNumber: string; totalAmount: string } | null;
   vendorBillId: string | null;
-  vendorBill: { billNumber: string; total: string } | null;
+  vendorBill: { billNumber: string; totalAmount: string } | null;
   paymentDate: string;
   amount: string;
   method: string;
@@ -38,7 +38,7 @@ interface Invoice {
   id: string;
   invoiceNumber: string;
   customerId: string;
-  total: string;
+  totalAmount: string;
   paidAmount: string;
   status: string;
 }
@@ -47,14 +47,14 @@ interface VendorBill {
   id: string;
   billNumber: string;
   vendorId: string;
-  total: string;
+  totalAmount: string;
   paidAmount: string;
   status: string;
 }
 
 const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
-  INBOUND: { label: 'Received', color: 'green' },
-  OUTBOUND: { label: 'Sent', color: 'red' },
+  INCOMING: { label: 'Received', color: 'green' },
+  OUTGOING: { label: 'Sent', color: 'red' },
 };
 
 const METHOD_OPTIONS = [
@@ -103,7 +103,7 @@ export default function PaymentsPage() {
   const [viewingPayment, setViewingPayment] = useState<Payment | null>(null);
 
   const [formData, setFormData] = useState({
-    type: 'INBOUND' as 'INBOUND' | 'OUTBOUND',
+    type: 'INCOMING' as 'INCOMING' | 'OUTGOING',
     contactId: '',
     invoiceId: '',
     vendorBillId: '',
@@ -167,10 +167,10 @@ export default function PaymentsPage() {
     if (urlType || urlInvoiceId || urlBillId) {
       const newFormData = { ...formData };
       
-      if (urlType === 'inbound') {
-        newFormData.type = 'INBOUND';
-      } else if (urlType === 'outbound') {
-        newFormData.type = 'OUTBOUND';
+      if (urlType === 'incoming') {
+        newFormData.type = 'INCOMING';
+      } else if (urlType === 'outgoing') {
+        newFormData.type = 'OUTGOING';
       }
       
       if (urlInvoiceId) {
@@ -178,7 +178,7 @@ export default function PaymentsPage() {
         const invoice = invoices.find(i => i.id === urlInvoiceId);
         if (invoice) {
           newFormData.contactId = invoice.customerId;
-          newFormData.amount = (parseFloat(invoice.total) - parseFloat(invoice.paidAmount)).toString();
+          newFormData.amount = (parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount)).toString();
         }
       }
       
@@ -187,7 +187,7 @@ export default function PaymentsPage() {
         const bill = vendorBills.find(b => b.id === urlBillId);
         if (bill) {
           newFormData.contactId = bill.vendorId;
-          newFormData.amount = (parseFloat(bill.total) - parseFloat(bill.paidAmount)).toString();
+          newFormData.amount = (parseFloat(bill.totalAmount) - parseFloat(bill.paidAmount)).toString();
         }
       }
       
@@ -206,8 +206,8 @@ export default function PaymentsPage() {
         body: JSON.stringify({
           type: formData.type,
           contactId: formData.contactId,
-          invoiceId: formData.type === 'INBOUND' ? formData.invoiceId || null : null,
-          vendorBillId: formData.type === 'OUTBOUND' ? formData.vendorBillId || null : null,
+          invoiceId: formData.type === 'INCOMING' ? formData.invoiceId || null : null,
+          vendorBillId: formData.type === 'OUTGOING' ? formData.vendorBillId || null : null,
           paymentDate: formData.paymentDate,
           amount: parseFloat(formData.amount),
           method: formData.method,
@@ -247,7 +247,7 @@ export default function PaymentsPage() {
 
   const resetForm = () => {
     setFormData({
-      type: 'INBOUND',
+      type: 'INCOMING',
       contactId: '',
       invoiceId: '',
       vendorBillId: '',
@@ -259,7 +259,7 @@ export default function PaymentsPage() {
     });
   };
 
-  const contacts = formData.type === 'INBOUND' ? customers : vendors;
+  const contacts = formData.type === 'INCOMING' ? customers : vendors;
   
   const filteredInvoices = invoices.filter(
     i => !formData.contactId || i.customerId === formData.contactId
@@ -269,7 +269,7 @@ export default function PaymentsPage() {
     b => !formData.contactId || b.vendorId === formData.contactId
   );
 
-  const handleTypeChange = (type: 'INBOUND' | 'OUTBOUND') => {
+  const handleTypeChange = (type: 'INCOMING' | 'OUTGOING') => {
     setFormData({
       ...formData,
       type,
@@ -280,13 +280,13 @@ export default function PaymentsPage() {
   };
 
   const handleDocumentChange = (docId: string) => {
-    if (formData.type === 'INBOUND') {
+    if (formData.type === 'INCOMING') {
       const invoice = invoices.find(i => i.id === docId);
       setFormData({
         ...formData,
         invoiceId: docId,
         contactId: invoice?.customerId || formData.contactId,
-        amount: invoice ? (parseFloat(invoice.total) - parseFloat(invoice.paidAmount)).toString() : '',
+        amount: invoice ? (parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount)).toString() : '',
       });
     } else {
       const bill = vendorBills.find(b => b.id === docId);
@@ -294,7 +294,7 @@ export default function PaymentsPage() {
         ...formData,
         vendorBillId: docId,
         contactId: bill?.vendorId || formData.contactId,
-        amount: bill ? (parseFloat(bill.total) - parseFloat(bill.paidAmount)).toString() : '',
+        amount: bill ? (parseFloat(bill.totalAmount) - parseFloat(bill.paidAmount)).toString() : '',
       });
     }
   };
@@ -304,7 +304,7 @@ export default function PaymentsPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Payments</h1>
-          <p className="text-gray-500 dark:text-gray-400">Track inbound and outbound payments</p>
+          <p className="text-gray-500 dark:text-gray-400">Track incoming and outgoing payments</p>
         </div>
         <button
           onClick={() => {
@@ -328,8 +328,8 @@ export default function PaymentsPage() {
             className="input-field w-40"
           >
             <option value="">All</option>
-            <option value="INBOUND">Received (Inbound)</option>
-            <option value="OUTBOUND">Sent (Outbound)</option>
+            <option value="INCOMING">Received (Incoming)</option>
+            <option value="OUTGOING">Sent (Outgoing)</option>
           </select>
         </div>
       </div>
@@ -352,68 +352,74 @@ export default function PaymentsPage() {
       ) : (
         <>
           <div className="card overflow-hidden">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Payment #</th>
-                  <th>Type</th>
-                  <th>Contact</th>
-                  <th>Document</th>
-                  <th>Date</th>
-                  <th>Method</th>
-                  <th>Amount</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td className="font-medium text-gray-900 dark:text-white">{payment.paymentNumber}</td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        {payment.type === 'INBOUND' ? (
-                          <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                        ) : (
-                          <ArrowUpRight className="w-4 h-4 text-red-600" />
-                        )}
-                        <StatusBadge status={payment.type} config={TYPE_CONFIG} />
-                      </div>
-                    </td>
-                    <td>{payment.contact.name}</td>
-                    <td>
-                      {payment.invoice?.invoiceNumber || payment.vendorBill?.billNumber || '-'}
-                    </td>
-                    <td>{formatDate(payment.paymentDate)}</td>
-                    <td>
-                      <span className="text-sm">
-                        {METHOD_OPTIONS.find(m => m.value === payment.method)?.label}
-                      </span>
-                    </td>
-                    <td className={`font-semibold ${payment.type === 'INBOUND' ? 'text-green-600' : 'text-red-600'}`}>
-                      {payment.type === 'INBOUND' ? '+' : '-'}{formatCurrency(payment.amount)}
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setViewingPayment(payment); setIsViewModalOpen(true); }}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(payment.id)}
-                          className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Payment #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Contact</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Document</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Method</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Amount</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                  {payments.map((payment) => (
+                    <tr key={payment.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-primary-600 dark:text-primary-400">{payment.paymentNumber}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {payment.type === 'INCOMING' ? (
+                            <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-full">
+                              <ArrowDownLeft className="w-4 h-4 text-green-600" />
+                            </div>
+                          ) : (
+                            <div className="p-1.5 bg-red-100 dark:bg-red-900/30 rounded-full">
+                              <ArrowUpRight className="w-4 h-4 text-red-600" />
+                            </div>
+                          )}
+                          <StatusBadge status={payment.type} />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-900 dark:text-white">{payment.contact.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">
+                        {payment.invoice?.invoiceNumber || payment.vendorBill?.billNumber || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{formatDate(payment.paymentDate)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                          {METHOD_OPTIONS.find(m => m.value === payment.method)?.label || payment.method}
+                        </span>
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-right font-bold text-lg ${payment.type === 'INCOMING' ? 'text-green-600' : 'text-red-600'}`}>
+                        {payment.type === 'INCOMING' ? '+' : '-'}{formatCurrency(payment.amount)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => { setViewingPayment(payment); setIsViewModalOpen(true); }}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(payment.id)}
+                            className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
           
           <Pagination
@@ -439,9 +445,9 @@ export default function PaymentsPage() {
           <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
             <button
               type="button"
-              onClick={() => handleTypeChange('INBOUND')}
+              onClick={() => handleTypeChange('INCOMING')}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                formData.type === 'INBOUND'
+                formData.type === 'INCOMING'
                   ? 'bg-green-600 text-white'
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
@@ -451,9 +457,9 @@ export default function PaymentsPage() {
             </button>
             <button
               type="button"
-              onClick={() => handleTypeChange('OUTBOUND')}
+              onClick={() => handleTypeChange('OUTGOING')}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                formData.type === 'OUTBOUND'
+                formData.type === 'OUTGOING'
                   ? 'bg-red-600 text-white'
                   : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
@@ -465,14 +471,14 @@ export default function PaymentsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <Select
-              label={formData.type === 'INBOUND' ? 'Customer *' : 'Vendor *'}
+              label={formData.type === 'INCOMING' ? 'Customer *' : 'Vendor *'}
               value={formData.contactId}
               onChange={(e) => setFormData({ ...formData, contactId: e.target.value, invoiceId: '', vendorBillId: '' })}
               options={contacts.map((c) => ({ value: c.id, label: c.name }))}
               required
             />
             
-            {formData.type === 'INBOUND' ? (
+            {formData.type === 'INCOMING' ? (
               <Select
                 label="Invoice"
                 value={formData.invoiceId}
@@ -481,7 +487,7 @@ export default function PaymentsPage() {
                   { value: '', label: 'No linked invoice' },
                   ...filteredInvoices.map((i) => ({ 
                     value: i.id, 
-                    label: `${i.invoiceNumber} - ${formatCurrency(parseFloat(i.total) - parseFloat(i.paidAmount))} due` 
+                    label: `${i.invoiceNumber} - ${formatCurrency(parseFloat(i.totalAmount) - parseFloat(i.paidAmount))} due` 
                   }))
                 ]}
               />
@@ -494,7 +500,7 @@ export default function PaymentsPage() {
                   { value: '', label: 'No linked bill' },
                   ...filteredBills.map((b) => ({ 
                     value: b.id, 
-                    label: `${b.billNumber} - ${formatCurrency(parseFloat(b.total) - parseFloat(b.paidAmount))} due` 
+                    label: `${b.billNumber} - ${formatCurrency(parseFloat(b.totalAmount) - parseFloat(b.paidAmount))} due` 
                   }))
                 ]}
               />
@@ -572,22 +578,26 @@ export default function PaymentsPage() {
               <div>
                 <p className="text-sm text-gray-500">Type</p>
                 <div className="flex items-center gap-2 mt-1">
-                  {viewingPayment.type === 'INBOUND' ? (
-                    <ArrowDownLeft className="w-4 h-4 text-green-600" />
+                  {viewingPayment.type === 'INCOMING' ? (
+                    <div className="p-1.5 bg-green-100 dark:bg-green-900/30 rounded-full">
+                      <ArrowDownLeft className="w-4 h-4 text-green-600" />
+                    </div>
                   ) : (
-                    <ArrowUpRight className="w-4 h-4 text-red-600" />
+                    <div className="p-1.5 bg-red-100 dark:bg-red-900/30 rounded-full">
+                      <ArrowUpRight className="w-4 h-4 text-red-600" />
+                    </div>
                   )}
-                  <StatusBadge status={viewingPayment.type} config={TYPE_CONFIG} />
+                  <StatusBadge status={viewingPayment.type} />
                 </div>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Amount</p>
-                <p className={`text-2xl font-bold ${viewingPayment.type === 'INBOUND' ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(viewingPayment.amount)}
+                <p className={`text-2xl font-bold ${viewingPayment.type === 'INCOMING' ? 'text-green-600' : 'text-red-600'}`}>
+                  {viewingPayment.type === 'INCOMING' ? '+' : '-'}{formatCurrency(viewingPayment.amount)}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">{viewingPayment.type === 'INBOUND' ? 'Customer' : 'Vendor'}</p>
+                <p className="text-sm text-gray-500">{viewingPayment.type === 'INCOMING' ? 'Customer' : 'Vendor'}</p>
                 <p className="font-medium">{viewingPayment.contact.name}</p>
               </div>
               <div>

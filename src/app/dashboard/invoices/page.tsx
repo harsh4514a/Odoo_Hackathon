@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Eye, Edit, Trash2, FileText, Check, X, CreditCard, Download } from 'lucide-react';
+import { Eye, Check, CreditCard, Printer, Send, Ban, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Modal } from '@/components/ui/Modal';
 import { LoadingSpinner, EmptyState } from '@/components/ui/States';
@@ -16,7 +16,7 @@ interface InvoiceLine {
   description: string;
   quantity: number;
   unitPrice: string;
-  total: string;
+  lineTotal: string;
   analyticalAccountId: string | null;
   analyticalAccount?: { code: string; name: string } | null;
 }
@@ -25,7 +25,7 @@ interface Invoice {
   id: string;
   invoiceNumber: string;
   customerId: string;
-  customer: { name: string; email: string };
+  customer: { name: string; email?: string };
   salesOrderId: string | null;
   salesOrder?: { orderNumber: string } | null;
   invoiceDate: string;
@@ -34,43 +34,10 @@ interface Invoice {
   notes: string | null;
   subtotal: string;
   taxAmount: string;
-  total: string;
+  totalAmount: string;
   paidAmount: string;
   lines: InvoiceLine[];
 }
-
-interface Contact {
-  id: string;
-  name: string;
-}
-
-interface SalesOrder {
-  id: string;
-  orderNumber: string;
-  customerId: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  salePrice: string;
-  analyticalAccountId: string | null;
-}
-
-interface AnalyticalAccount {
-  id: string;
-  code: string;
-  name: string;
-}
-
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  DRAFT: { label: 'Draft', color: 'gray' },
-  SENT: { label: 'Sent', color: 'blue' },
-  PARTIALLY_PAID: { label: 'Partially Paid', color: 'yellow' },
-  PAID: { label: 'Paid', color: 'green' },
-  CANCELLED: { label: 'Cancelled', color: 'red' },
-};
 
 const formatCurrency = (amount: string | number) => {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -78,7 +45,7 @@ const formatCurrency = (amount: string | number) => {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
-  }).format(num);
+  }).format(num || 0);
 };
 
 const formatDate = (date: string) => {
@@ -89,28 +56,148 @@ const formatDate = (date: string) => {
   });
 };
 
+const getPaymentStatus = (invoice: Invoice) => {
+  const total = parseFloat(invoice.totalAmount) || 0;
+  const paid = parseFloat(invoice.paidAmount) || 0;
+  
+  if (paid >= total && total > 0) return 'PAID';
+  if (paid > 0) return 'PARTIAL';
+  return 'NOT_PAID';
+};
+
+const printInvoice = (invoice: Invoice) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Please allow popups to print the invoice');
+    return;
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Invoice ${invoice.invoiceNumber}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: #1f2937; }
+        .header p { margin: 5px 0; color: #6b7280; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .info-box { padding: 15px; background: #f9fafb; border-radius: 8px; }
+        .info-box h3 { margin: 0 0 10px 0; color: #374151; font-size: 14px; }
+        .info-box p { margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        th { background: #f3f4f6; font-weight: 600; }
+        .text-right { text-align: right; }
+        .totals { margin-top: 20px; }
+        .totals tr td { padding: 8px 12px; }
+        .totals .total-row { font-weight: bold; font-size: 16px; background: #f3f4f6; }
+        .footer { margin-top: 40px; text-align: center; color: #6b7280; font-size: 12px; }
+        @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>SHIV FURNITURE</h1>
+        <p>Budget Accounting System</p>
+        <h2 style="margin-top: 20px;">TAX INVOICE</h2>
+      </div>
+      
+      <div class="info-grid">
+        <div class="info-box">
+          <h3>INVOICE DETAILS</h3>
+          <p><strong>Invoice #:</strong> ${invoice.invoiceNumber}</p>
+          <p><strong>Date:</strong> ${formatDate(invoice.invoiceDate)}</p>
+          <p><strong>Due Date:</strong> ${formatDate(invoice.dueDate)}</p>
+          <p><strong>Status:</strong> ${invoice.status}</p>
+        </div>
+        <div class="info-box">
+          <h3>BILL TO</h3>
+          <p><strong>${invoice.customer.name}</strong></p>
+          ${invoice.customer.email ? `<p>${invoice.customer.email}</p>` : ''}
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Description</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Unit Price</th>
+            <th class="text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${invoice.lines.map((line, idx) => `
+            <tr>
+              <td>${idx + 1}</td>
+              <td>${line.product?.name || line.description}</td>
+              <td class="text-right">${line.quantity}</td>
+              <td class="text-right">${formatCurrency(line.unitPrice)}</td>
+              <td class="text-right">${formatCurrency(line.lineTotal)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <table class="totals" style="width: 300px; margin-left: auto;">
+        <tr>
+          <td>Subtotal:</td>
+          <td class="text-right">${formatCurrency(invoice.subtotal)}</td>
+        </tr>
+        <tr>
+          <td>Tax (GST):</td>
+          <td class="text-right">${formatCurrency(invoice.taxAmount)}</td>
+        </tr>
+        <tr class="total-row">
+          <td>Total:</td>
+          <td class="text-right">${formatCurrency(invoice.totalAmount)}</td>
+        </tr>
+        <tr style="color: green;">
+          <td>Paid:</td>
+          <td class="text-right">${formatCurrency(invoice.paidAmount)}</td>
+        </tr>
+        <tr style="color: red; font-weight: bold;">
+          <td>Balance Due:</td>
+          <td class="text-right">${formatCurrency(parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount))}</td>
+        </tr>
+      </table>
+
+      ${invoice.notes ? `<div style="margin-top: 30px; padding: 15px; background: #f9fafb; border-radius: 8px;"><strong>Notes:</strong> ${invoice.notes}</div>` : ''}
+
+      <div class="footer">
+        <p>Thank you for your business!</p>
+        <p>Generated on ${new Date().toLocaleString('en-IN')}</p>
+      </div>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.onload = () => {
+    printWindow.print();
+  };
+};
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [customers, setCustomers] = useState<Contact[]>([]);
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [analyticalAccounts, setAnalyticalAccounts] = useState<AnalyticalAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
+  const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
 
-  const [formData, setFormData] = useState({
-    customerId: '',
-    salesOrderId: '',
-    invoiceDate: new Date().toISOString().split('T')[0],
-    dueDate: '',
-    notes: '',
-    lines: [{ productId: '', description: '', quantity: 1, unitPrice: '', analyticalAccountId: '' }],
+  const [paymentData, setPaymentData] = useState({
+    paymentVia: 'CASH',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    note: '',
   });
 
   const fetchInvoices = async () => {
@@ -121,35 +208,13 @@ export default function InvoicesPage() {
       
       const res = await fetch(`/api/invoices?${params}`);
       const data = await res.json();
-      setInvoices(data.invoices);
-      setTotal(data.pagination.total);
+      setInvoices(data.invoices || []);
+      setTotal(data.pagination?.total || 0);
     } catch (error) {
       toast.error('Failed to fetch invoices');
+      setInvoices([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchDropdownData = async () => {
-    try {
-      const [customersRes, productsRes, analyticalRes, soRes] = await Promise.all([
-        fetch('/api/contacts?type=customer'),
-        fetch('/api/products'),
-        fetch('/api/analytical-accounts'),
-        fetch('/api/sales-orders?status=CONFIRMED'),
-      ]);
-      
-      const customersData = await customersRes.json();
-      const productsData = await productsRes.json();
-      const analyticalData = await analyticalRes.json();
-      const soData = await soRes.json();
-      
-      setCustomers(customersData.contacts);
-      setProducts(productsData.products);
-      setAnalyticalAccounts(analyticalData.analyticalAccounts);
-      setSalesOrders(soData.orders || []);
-    } catch (error) {
-      console.error('Failed to fetch dropdown data');
     }
   };
 
@@ -157,181 +222,90 @@ export default function InvoicesPage() {
     fetchInvoices();
   }, [page, statusFilter]);
 
-  useEffect(() => {
-    fetchDropdownData();
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleDelete = async (invoiceId: string) => {
+    if (!confirm('Are you sure you want to cancel this invoice?')) return;
     
-    const validLines = formData.lines.filter(l => l.productId && l.quantity && l.unitPrice);
-    if (validLines.length === 0) {
-      toast.error('Add at least one line item');
-      return;
-    }
-
     try {
-      const url = editingInvoice 
-        ? `/api/invoices/${editingInvoice.id}` 
-        : '/api/invoices';
-      const method = editingInvoice ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: formData.customerId,
-          salesOrderId: formData.salesOrderId || null,
-          invoiceDate: formData.invoiceDate,
-          dueDate: formData.dueDate,
-          notes: formData.notes || null,
-          lines: validLines.map(l => ({
-            productId: l.productId,
-            description: l.description,
-            quantity: parseFloat(l.quantity.toString()),
-            unitPrice: parseFloat(l.unitPrice),
-            analyticalAccountId: l.analyticalAccountId || null,
-          })),
-        }),
+      const res = await fetch(`/api/invoices/${invoiceId}`, {
+        method: 'DELETE',
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error);
+        throw new Error(data.error || 'Failed to delete invoice');
       }
-
-      toast.success(editingInvoice ? 'Invoice updated' : 'Invoice created');
-      setIsModalOpen(false);
-      resetForm();
+      toast.success('Invoice cancelled successfully');
       fetchInvoices();
     } catch (error: any) {
       toast.error(error.message);
     }
   };
 
-  const handleStatusChange = async (invoiceId: string, newStatus: string) => {
+  const openPaymentModal = (invoice: Invoice) => {
+    setPayingInvoice(invoice);
+    const amountDue = Math.round((parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount)) * 100) / 100;
+    setPaymentData({
+      paymentVia: 'CASH',
+      amount: amountDue.toFixed(2),
+      date: new Date().toISOString().split('T')[0],
+      note: '',
+    });
+    setIsPaymentModalOpen(true);
+  };
+
+  const handlePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payingInvoice) return;
+
+    const amount = parseFloat(paymentData.amount);
+    const amountDue = parseFloat(payingInvoice.totalAmount) - parseFloat(payingInvoice.paidAmount);
+    
+    if (amount <= 0) {
+      toast.error('Payment amount must be greater than 0');
+      return;
+    }
+    
+    if (amount > amountDue) {
+      toast.error(`Payment amount cannot exceed due amount (${formatCurrency(amountDue)})`);
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/invoices/${invoiceId}`, {
-        method: 'PATCH',
+      const res = await fetch('/api/payments', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({
+          type: 'INCOMING',
+          invoiceId: payingInvoice.id,
+          contactId: payingInvoice.customerId,
+          amount: amount,
+          paymentDate: paymentData.date,
+          method: paymentData.paymentVia,
+          notes: paymentData.note || null,
+        }),
       });
 
-      if (!res.ok) throw new Error('Failed to update status');
-      toast.success('Status updated');
-      fetchInvoices();
-    } catch (error) {
-      toast.error('Failed to update status');
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this invoice?')) return;
-    
-    try {
-      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete');
-      toast.success('Invoice deleted');
-      fetchInvoices();
-    } catch (error) {
-      toast.error('Failed to delete invoice');
-    }
-  };
-
-  const resetForm = () => {
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 30);
-    
-    setFormData({
-      customerId: '',
-      salesOrderId: '',
-      invoiceDate: new Date().toISOString().split('T')[0],
-      dueDate: dueDate.toISOString().split('T')[0],
-      notes: '',
-      lines: [{ productId: '', description: '', quantity: 1, unitPrice: '', analyticalAccountId: '' }],
-    });
-    setEditingInvoice(null);
-  };
-
-  const openEditModal = (invoice: Invoice) => {
-    setEditingInvoice(invoice);
-    setFormData({
-      customerId: invoice.customerId,
-      salesOrderId: invoice.salesOrderId || '',
-      invoiceDate: invoice.invoiceDate.split('T')[0],
-      dueDate: invoice.dueDate.split('T')[0],
-      notes: invoice.notes || '',
-      lines: invoice.lines.map(l => ({
-        productId: l.productId,
-        description: l.description,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice,
-        analyticalAccountId: l.analyticalAccountId || '',
-      })),
-    });
-    setIsModalOpen(true);
-  };
-
-  const addLine = () => {
-    setFormData({
-      ...formData,
-      lines: [...formData.lines, { productId: '', description: '', quantity: 1, unitPrice: '', analyticalAccountId: '' }],
-    });
-  };
-
-  const removeLine = (index: number) => {
-    if (formData.lines.length === 1) return;
-    setFormData({
-      ...formData,
-      lines: formData.lines.filter((_, i) => i !== index),
-    });
-  };
-
-  const updateLine = (index: number, field: string, value: any) => {
-    const newLines = [...formData.lines];
-    newLines[index] = { ...newLines[index], [field]: value };
-    
-    if (field === 'productId' && value) {
-      const product = products.find(p => p.id === value);
-      if (product) {
-        newLines[index].description = product.name;
-        newLines[index].unitPrice = product.salePrice;
-        newLines[index].analyticalAccountId = product.analyticalAccountId || '';
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to record payment');
       }
+
+      toast.success('Payment received successfully');
+      setIsPaymentModalOpen(false);
+      setPayingInvoice(null);
+      fetchInvoices();
+    } catch (error: any) {
+      toast.error(error.message);
     }
-    
-    setFormData({ ...formData, lines: newLines });
   };
-
-  const calculateTotal = () => {
-    return formData.lines.reduce((sum, line) => {
-      const qty = parseFloat(line.quantity.toString()) || 0;
-      const price = parseFloat(line.unitPrice) || 0;
-      return sum + (qty * price);
-    }, 0);
-  };
-
-  const filteredSalesOrders = salesOrders.filter(
-    so => !formData.customerId || so.customerId === formData.customerId
-  );
 
   return (
     <div className="space-y-6">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Invoices</h1>
-          <p className="text-gray-500 dark:text-gray-400">Manage customer invoices</p>
+          <h1 className="page-title">Customer Invoices</h1>
+          <p className="text-gray-500 dark:text-gray-400">View and manage customer invoices</p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setIsModalOpen(true);
-          }}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          New Invoice
-        </button>
       </div>
 
       {/* Filters */}
@@ -345,9 +319,7 @@ export default function InvoicesPage() {
           >
             <option value="">All</option>
             <option value="DRAFT">Draft</option>
-            <option value="SENT">Sent</option>
-            <option value="PARTIALLY_PAID">Partially Paid</option>
-            <option value="PAID">Paid</option>
+            <option value="POSTED">Confirmed</option>
             <option value="CANCELLED">Cancelled</option>
           </select>
         </div>
@@ -360,109 +332,96 @@ export default function InvoicesPage() {
         <div className="card p-8">
           <EmptyState
             title="No invoices"
-            description="Create your first invoice to start billing customers."
-            action={
-              <button onClick={() => setIsModalOpen(true)} className="btn-primary">
-                New Invoice
-              </button>
-            }
+            description="Invoices are created from confirmed Sales Orders."
           />
         </div>
       ) : (
         <>
           <div className="card overflow-hidden">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Invoice #</th>
-                  <th>Customer</th>
-                  <th>Invoice Date</th>
-                  <th>Due Date</th>
-                  <th>Total</th>
-                  <th>Paid</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((invoice) => (
-                  <tr key={invoice.id}>
-                    <td>
-                      <div>
-                        <span className="font-medium text-gray-900 dark:text-white">{invoice.invoiceNumber}</span>
-                        {invoice.salesOrder && (
-                          <p className="text-xs text-gray-500">SO: {invoice.salesOrder.orderNumber}</p>
-                        )}
-                      </div>
-                    </td>
-                    <td>{invoice.customer.name}</td>
-                    <td>{formatDate(invoice.invoiceDate)}</td>
-                    <td>{formatDate(invoice.dueDate)}</td>
-                    <td className="font-semibold">{formatCurrency(invoice.total)}</td>
-                    <td>{formatCurrency(invoice.paidAmount)}</td>
-                    <td>
-                      <StatusBadge status={invoice.status} config={STATUS_CONFIG} />
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setViewingInvoice(invoice); setIsViewModalOpen(true); }}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {invoice.status === 'DRAFT' && (
-                          <>
-                            <button
-                              onClick={() => openEditModal(invoice)}
-                              className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(invoice.id, 'SENT')}
-                              className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900 rounded text-green-600"
-                              title="Send Invoice"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {(invoice.status === 'SENT' || invoice.status === 'PARTIALLY_PAID') && (
-                          <a
-                            href={`/dashboard/payments?type=inbound&invoiceId=${invoice.id}`}
-                            className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900 rounded text-blue-600"
-                            title="Record Payment"
-                          >
-                            <CreditCard className="w-4 h-4" />
-                          </a>
-                        )}
-                        {invoice.status !== 'DRAFT' && (
-                          <button
-                            onClick={() => window.open(`/api/invoices/${invoice.id}/pdf`, '_blank')}
-                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                            title="Download PDF"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                        )}
-                        {invoice.status === 'DRAFT' && (
-                          <button
-                            onClick={() => handleDelete(invoice.id)}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Invoice #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Invoice Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Due Date</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Received</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Due</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Payment</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                  {invoices.map((invoice) => {
+                    const amountDue = parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount);
+                    const paymentStatus = getPaymentStatus(invoice);
+                    const isConfirmed = invoice.status === 'POSTED' || invoice.status === 'CONFIRMED';
+                    
+                    return (
+                      <tr key={invoice.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <span className="font-medium text-primary-600 dark:text-primary-400">{invoice.invoiceNumber}</span>
+                            {invoice.salesOrder && (
+                              <p className="text-xs text-gray-500">SO: {invoice.salesOrder.orderNumber}</p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-gray-900 dark:text-white">{invoice.customer.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{formatDate(invoice.invoiceDate)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{formatDate(invoice.dueDate)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900 dark:text-white">{formatCurrency(invoice.totalAmount)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-green-600">{formatCurrency(invoice.paidAmount)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-red-600 font-semibold">{formatCurrency(amountDue)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <StatusBadge status={invoice.status} />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          {isConfirmed && (
+                            <StatusBadge status={paymentStatus} />
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => { setViewingInvoice(invoice); setIsViewModalOpen(true); }}
+                              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                              title="View"
+                            >
+                              <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                            </button>
+                            
+                            {invoice.status !== 'CANCELLED' && paymentStatus !== 'PAID' && (
+                              <button
+                                onClick={() => openPaymentModal(invoice)}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm font-medium"
+                                title="Receive Payment"
+                              >
+                                <CreditCard className="w-4 h-4" />
+                                Receive
+                              </button>
+                            )}
+                            
+                            {invoice.status === 'DRAFT' && (
+                              <button
+                                onClick={() => handleDelete(invoice.id)}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
+                                title="Delete Invoice"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-600" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
           
           <Pagination
@@ -472,162 +431,6 @@ export default function InvoicesPage() {
           />
         </>
       )}
-
-      {/* Create/Edit Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          resetForm();
-        }}
-        title={editingInvoice ? 'Edit Invoice' : 'New Invoice'}
-        size="xl"
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Customer *"
-              value={formData.customerId}
-              onChange={(e) => setFormData({ ...formData, customerId: e.target.value, salesOrderId: '' })}
-              options={customers.map((c) => ({ value: c.id, label: c.name }))}
-              required
-            />
-            <Select
-              label="Link to Sales Order"
-              value={formData.salesOrderId}
-              onChange={(e) => setFormData({ ...formData, salesOrderId: e.target.value })}
-              options={[
-                { value: '', label: 'None' },
-                ...filteredSalesOrders.map((so) => ({ value: so.id, label: so.orderNumber }))
-              ]}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Invoice Date *"
-              type="date"
-              value={formData.invoiceDate}
-              onChange={(e) => setFormData({ ...formData, invoiceDate: e.target.value })}
-              required
-            />
-            <Input
-              label="Due Date *"
-              type="date"
-              value={formData.dueDate}
-              onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
-              required
-            />
-          </div>
-
-          {/* Line Items */}
-          <div className="border-t pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-medium">Line Items</h4>
-              <button type="button" onClick={addLine} className="btn-secondary text-sm py-1">
-                <Plus className="w-4 h-4 inline mr-1" />
-                Add Line
-              </button>
-            </div>
-
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {formData.lines.map((line, index) => (
-                <div key={index} className="grid grid-cols-12 gap-2 items-start bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-                  <div className="col-span-3">
-                    <select
-                      value={line.productId}
-                      onChange={(e) => updateLine(index, 'productId', e.target.value)}
-                      className="input-field text-sm"
-                      required
-                    >
-                      <option value="">Select Product</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      type="number"
-                      min="1"
-                      step="0.01"
-                      value={line.quantity}
-                      onChange={(e) => updateLine(index, 'quantity', e.target.value)}
-                      className="input-field text-sm"
-                      placeholder="Qty"
-                      required
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={line.unitPrice}
-                      onChange={(e) => updateLine(index, 'unitPrice', e.target.value)}
-                      className="input-field text-sm"
-                      placeholder="Price"
-                      required
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <span className="block py-2 text-sm font-medium">
-                      {formatCurrency((parseFloat(line.quantity.toString()) || 0) * (parseFloat(line.unitPrice) || 0))}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <select
-                      value={line.analyticalAccountId}
-                      onChange={(e) => updateLine(index, 'analyticalAccountId', e.target.value)}
-                      className="input-field text-sm"
-                    >
-                      <option value="">Cost Center</option>
-                      {analyticalAccounts.map((a) => (
-                        <option key={a.id} value={a.id}>{a.code}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-1 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={() => removeLine(index)}
-                      className="p-1 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                      disabled={formData.lines.length === 1}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end mt-4 text-lg font-bold">
-              Total: {formatCurrency(calculateTotal())}
-            </div>
-          </div>
-
-          <Textarea
-            label="Notes"
-            value={formData.notes}
-            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-          />
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <button
-              type="button"
-              onClick={() => {
-                setIsModalOpen(false);
-                resetForm();
-              }}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary">
-              {editingInvoice ? 'Update' : 'Create'}
-            </button>
-          </div>
-        </form>
-      </Modal>
 
       {/* View Modal */}
       <Modal
@@ -645,7 +448,12 @@ export default function InvoicesPage() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Status</p>
-                <StatusBadge status={viewingInvoice.status} config={STATUS_CONFIG} />
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={viewingInvoice.status} />
+                  {(viewingInvoice.status === 'POSTED' || viewingInvoice.status === 'CONFIRMED') && (
+                    <StatusBadge status={getPaymentStatus(viewingInvoice)} />
+                  )}
+                </div>
               </div>
               <div>
                 <p className="text-sm text-gray-500">Invoice Date</p>
@@ -668,6 +476,7 @@ export default function InvoicesPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700">
                   <tr>
+                    <th className="text-left p-2">#</th>
                     <th className="text-left p-2">Product</th>
                     <th className="text-right p-2">Qty</th>
                     <th className="text-right p-2">Unit Price</th>
@@ -678,28 +487,29 @@ export default function InvoicesPage() {
                 <tbody>
                   {viewingInvoice.lines.map((line, idx) => (
                     <tr key={idx} className="border-b dark:border-gray-700">
-                      <td className="p-2">{line.description}</td>
+                      <td className="p-2">{idx + 1}</td>
+                      <td className="p-2">{line.product?.name || line.description}</td>
                       <td className="p-2 text-right">{line.quantity}</td>
                       <td className="p-2 text-right">{formatCurrency(line.unitPrice)}</td>
-                      <td className="p-2 text-right">{formatCurrency(line.total)}</td>
+                      <td className="p-2 text-right">{formatCurrency(line.lineTotal)}</td>
                       <td className="p-2">{line.analyticalAccount ? `${line.analyticalAccount.code}` : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="font-bold">
+                <tfoot className="font-bold border-t-2 border-gray-300 dark:border-gray-600">
                   <tr>
-                    <td colSpan={3} className="p-2 text-right">Total:</td>
-                    <td className="p-2 text-right">{formatCurrency(viewingInvoice.total)}</td>
+                    <td colSpan={4} className="p-2 text-right">Total:</td>
+                    <td className="p-2 text-right">{formatCurrency(viewingInvoice.totalAmount)}</td>
                     <td></td>
                   </tr>
                   <tr className="text-green-600">
-                    <td colSpan={3} className="p-2 text-right">Paid:</td>
+                    <td colSpan={4} className="p-2 text-right">Received:</td>
                     <td className="p-2 text-right">{formatCurrency(viewingInvoice.paidAmount)}</td>
                     <td></td>
                   </tr>
-                  <tr>
-                    <td colSpan={3} className="p-2 text-right">Balance:</td>
-                    <td className="p-2 text-right">{formatCurrency(parseFloat(viewingInvoice.total) - parseFloat(viewingInvoice.paidAmount))}</td>
+                  <tr className="text-red-600">
+                    <td colSpan={4} className="p-2 text-right">Amount Due:</td>
+                    <td className="p-2 text-right">{formatCurrency(parseFloat(viewingInvoice.totalAmount) - parseFloat(viewingInvoice.paidAmount))}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -712,8 +522,158 @@ export default function InvoicesPage() {
                 <p className="text-sm">{viewingInvoice.notes}</p>
               </div>
             )}
+            
+            {/* Action buttons in view modal */}
+            {(viewingInvoice.status === 'POSTED' || viewingInvoice.status === 'CONFIRMED') && getPaymentStatus(viewingInvoice) !== 'PAID' && (
+              <div className="flex justify-end pt-4 border-t">
+                <button
+                  onClick={() => {
+                    setIsViewModalOpen(false);
+                    openPaymentModal(viewingInvoice);
+                  }}
+                  className="btn-primary flex items-center gap-2 bg-green-600 hover:bg-green-700"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Receive Payment
+                </button>
+              </div>
+            )}
           </div>
         )}
+      </Modal>
+
+      {/* Payment Modal */}
+      <Modal
+        isOpen={isPaymentModalOpen}
+        onClose={() => {
+          setIsPaymentModalOpen(false);
+          setPayingInvoice(null);
+        }}
+        title="Receive Payment"
+        size="md"
+      >
+        {payingInvoice && (() => {
+          const amountDue = Math.round((parseFloat(payingInvoice.totalAmount) - parseFloat(payingInvoice.paidAmount)) * 100) / 100;
+          const paymentAmount = Math.round((parseFloat(paymentData.amount) || 0) * 100) / 100;
+          const remainingAfterPayment = Math.round((amountDue - paymentAmount) * 100) / 100;
+          
+          return (
+          <form onSubmit={handlePayment} className="space-y-4">
+            {/* Action Buttons */}
+            <div className="flex gap-2 border-b pb-4">
+              <button type="submit" className="btn-primary flex items-center gap-2 bg-green-600 hover:bg-green-700">
+                <Check className="w-4 h-4" />
+                Confirm
+              </button>
+              <button type="button" onClick={() => printInvoice(payingInvoice)} className="btn-secondary flex items-center gap-2">
+                <Printer className="w-4 h-4" />
+                Print
+              </button>
+              <button type="button" className="btn-secondary flex items-center gap-2">
+                <Send className="w-4 h-4" />
+                Send
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPaymentModalOpen(false);
+                  setPayingInvoice(null);
+                }}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Ban className="w-4 h-4" />
+                Cancel
+              </button>
+            </div>
+
+            <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Customer</span>
+                <span className="font-medium">{payingInvoice.customer.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Invoice Total</span>
+                <span className="font-medium">{formatCurrency(payingInvoice.totalAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Already Received</span>
+                <span className="font-medium text-green-600">{formatCurrency(payingInvoice.paidAmount)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2">
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Amount Due</span>
+                <span className="font-bold text-red-600">{formatCurrency(amountDue)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Amount *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={amountDue}
+                    value={paymentData.amount}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value) || 0;
+                      if (val > amountDue) {
+                        setPaymentData({ ...paymentData, amount: amountDue.toString() });
+                      } else {
+                        setPaymentData({ ...paymentData, amount: e.target.value });
+                      }
+                    }}
+                    className="input-field w-full"
+                    required
+                  />
+                  {paymentAmount > amountDue && (
+                    <p className="text-red-500 text-xs mt-1">Amount cannot exceed {formatCurrency(amountDue)}</p>
+                  )}
+                </div>
+                <Select
+                  label="Payment Via"
+                  value={paymentData.paymentVia}
+                  onChange={(e) => setPaymentData({ ...paymentData, paymentVia: e.target.value })}
+                  options={[
+                    { value: 'CASH', label: 'Cash' },
+                    { value: 'BANK', label: 'Bank Transfer' },
+                    { value: 'UPI', label: 'UPI' },
+                    { value: 'CHEQUE', label: 'Cheque' },
+                  ]}
+                />
+              </div>
+
+              <Input
+                label="Date"
+                type="date"
+                value={paymentData.date}
+                onChange={(e) => setPaymentData({ ...paymentData, date: e.target.value })}
+              />
+
+              <Textarea
+                label="Note"
+                value={paymentData.note}
+                onChange={(e) => setPaymentData({ ...paymentData, note: e.target.value })}
+                placeholder="Alpha numeric (text)"
+                rows={2}
+              />
+            </div>
+
+            {/* Remaining Amount After Payment */}
+            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-700 dark:text-gray-300 font-medium">Remaining After Payment</span>
+                <span className={`font-bold text-lg ${remainingAfterPayment <= 0 ? 'text-green-600' : 'text-orange-600'}`}>
+                  {formatCurrency(Math.max(0, remainingAfterPayment))}
+                </span>
+              </div>
+              {remainingAfterPayment <= 0 && paymentAmount > 0 && (
+                <p className="text-green-600 text-sm mt-1">✓ Invoice will be fully paid</p>
+              )}
+            </div>
+          </form>
+        );
+        })()}
       </Modal>
     </div>
   );

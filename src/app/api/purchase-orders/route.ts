@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     const lines = linesWithAnalytical.map((line: any) => {
       const lineSubtotal = parseDecimal(line.quantity) * parseDecimal(line.unitPrice);
-      const lineTax = lineSubtotal * (parseDecimal(line.taxRate) / 100);
+      const lineTax = lineSubtotal * (parseDecimal(line.taxRate || 0) / 100);
       const lineTotal = lineSubtotal + lineTax;
 
       subtotal += lineSubtotal;
@@ -84,13 +84,13 @@ export async function POST(request: NextRequest) {
 
       return {
         productId: line.productId,
-        description: line.description,
+        description: line.description || '',
         quantity: line.quantity,
         unitPrice: line.unitPrice,
-        taxRate: line.taxRate,
+        taxRate: line.taxRate || 0,
         taxAmount: lineTax,
         lineTotal: lineTotal,
-        analyticalAccountId: line.analyticalAccountId,
+        analyticalAccountId: line.analyticalAccountId || null,
       };
     });
 

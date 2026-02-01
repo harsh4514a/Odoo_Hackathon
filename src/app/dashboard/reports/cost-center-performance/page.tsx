@@ -88,6 +88,10 @@ export default function CostCenterPerformancePage() {
   }, [year, selectedCostCenter]);
 
   const exportToCSV = () => {
+    if (!data || data.length === 0) {
+      toast.error('No data to export');
+      return;
+    }
     const headers = ['Cost Center', 'Code', 'Expenses', 'Revenue', 'Net Position', 'Transactions', 'Budget', 'Utilization %'];
     const rows = data.map(item => [
       item.name,
@@ -111,10 +115,10 @@ export default function CostCenterPerformancePage() {
   };
 
   const expenseDistributionData = {
-    labels: data.map(d => d.code),
+    labels: data?.map(d => d.code) || [],
     datasets: [
       {
-        data: data.map(d => d.totalExpenses),
+        data: data?.map(d => d.totalExpenses) || [],
         backgroundColor: COLORS.map(c => c.replace('rgb', 'rgba').replace(')', ', 0.7)')),
         borderColor: COLORS,
         borderWidth: 2,
@@ -123,11 +127,11 @@ export default function CostCenterPerformancePage() {
   };
 
   const trendChartData = {
-    labels: trendData.map(d => d.month),
+    labels: trendData?.map(d => d.month) || [],
     datasets: [
       {
         label: 'Expenses',
-        data: trendData.map(d => d.expenses),
+        data: trendData?.map(d => d.expenses) || [],
         borderColor: 'rgb(239, 68, 68)',
         backgroundColor: 'rgba(239, 68, 68, 0.1)',
         fill: true,
@@ -135,7 +139,7 @@ export default function CostCenterPerformancePage() {
       },
       {
         label: 'Revenue',
-        data: trendData.map(d => d.revenue),
+        data: trendData?.map(d => d.revenue) || [],
         borderColor: 'rgb(34, 197, 94)',
         backgroundColor: 'rgba(34, 197, 94, 0.1)',
         fill: true,

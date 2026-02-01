@@ -55,6 +55,7 @@ export async function PUT(
         description: body.description,
         parentId: body.parentId,
         isActive: body.isActive,
+        status: body.status,
       },
     });
 

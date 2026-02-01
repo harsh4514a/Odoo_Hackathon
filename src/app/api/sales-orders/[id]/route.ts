@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser, isAdmin } from '@/lib/auth';
 import { parseDecimal } from '@/lib/utils';
 import { applyAutoAnalyticalToLines } from '@/lib/auto-analytical';
+import { sendEmail, generateSalesOrderEmail } from '@/lib/email';
 
 export async function GET(
   request: NextRequest,
@@ -45,6 +46,126 @@ export async function GET(
   }
 }
 
+// PATCH - Update status only
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUser(request);
+    if (!user || !isAdmin(user)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+
+    const order = await prisma.salesOrder.update({
+      where: { id },
+      data: {
+        status: body.status,
+      },
+      include: {
+        customer: true,
+        lines: {
+          include: {
+            product: true,
+            analyticalAccount: true,
+          },
+        },
+      },
+    });
+
+    // Send email when status changes to SENT
+    if (body.status === 'SENT') {
+      console.log('📧 Status changed to SENT, checking customer email...');
+      console.log('Customer data:', JSON.stringify(order.customer, null, 2));
+      
+      if (order.customer?.email) {
+        try {
+          console.log('📧 Preparing to send email to:', order.customer.email);
+          const emailHtml = generateSalesOrderEmail({
+            orderNumber: order.orderNumber,
+            customerName: order.customer.name,
+            customerEmail: order.customer.email,
+            orderDate: order.orderDate,
+            expectedDate: order.expectedDate,
+            lines: order.lines,
+            totalAmount: order.totalAmount,
+            notes: order.notes,
+          });
+
+          await sendEmail({
+            to: order.customer.email,
+            subject: `Sales Order ${order.orderNumber} from Shiv Furniture`,
+            html: emailHtml,
+          });
+
+          console.log(`✅ Sales order email sent to ${order.customer.email}`);
+        } catch (emailError) {
+          console.error('Failed to send email:', emailError);
+        }
+      } else {
+        console.log('⚠️ Customer does not have an email address. Email not sent.');
+      }
+    }
+
+    // Create Invoice when status changes to CONFIRMED
+    if (body.status === 'CONFIRMED') {
+      try {
+        const existingInvoice = await prisma.invoice.findFirst({
+          where: { salesOrderId: id },
+        });
+
+        if (!existingInvoice) {
+          const lastInvoice = await prisma.invoice.findFirst({
+            orderBy: { invoiceNumber: 'desc' },
+          });
+          const lastNum = lastInvoice ? parseInt(lastInvoice.invoiceNumber.replace('INV-', '')) : 0;
+          const invoiceNumber = `INV-${String(lastNum + 1).padStart(5, '0')}`;
+
+          await prisma.invoice.create({
+            data: {
+              invoiceNumber,
+              customerId: order.customerId,
+              salesOrderId: id,
+              invoiceDate: new Date(),
+              dueDate: order.expectedDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              status: 'POSTED',
+              subtotal: order.subtotal,
+              taxAmount: order.taxAmount,
+              totalAmount: order.totalAmount,
+              paidAmount: 0,
+              notes: `Invoice created from Sales Order ${order.orderNumber}`,
+              lines: {
+                create: order.lines.map((line: any) => ({
+                  productId: line.productId,
+                  description: line.description || '',
+                  quantity: line.quantity,
+                  unitPrice: line.unitPrice,
+                  taxRate: line.taxRate || 0,
+                  taxAmount: line.taxAmount || 0,
+                  lineTotal: line.lineTotal,
+                  analyticalAccountId: line.analyticalAccountId,
+                })),
+              },
+            },
+          });
+          console.log(`✅ Invoice ${invoiceNumber} created for SO ${order.orderNumber}`);
+        }
+      } catch (invoiceError) {
+        console.error('Failed to create invoice:', invoiceError);
+      }
+    }
+
+    return NextResponse.json({ order });
+  } catch (error) {
+    console.error('Error updating sales order status:', error);
+    return NextResponse.json({ error: 'Failed to update status' }, { status: 500 });
+  }
+}
+
+// PUT - Full update
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -138,6 +259,91 @@ export async function PUT(
         },
       },
     });
+
+    // Send email when status changes to SENT
+    if (body.status === 'SENT') {
+      console.log('📧 Status changed to SENT, checking customer email...');
+      console.log('Customer data:', JSON.stringify(order.customer, null, 2));
+      
+      if (order.customer?.email) {
+        try {
+          console.log('📧 Preparing to send email to:', order.customer.email);
+          const emailHtml = generateSalesOrderEmail({
+            orderNumber: order.orderNumber,
+            customerName: order.customer.name,
+            customerEmail: order.customer.email,
+            orderDate: order.orderDate,
+            expectedDate: order.expectedDate,
+            lines: order.lines,
+            totalAmount: order.totalAmount,
+            notes: order.notes,
+          });
+
+          await sendEmail({
+            to: order.customer.email,
+            subject: `Sales Order ${order.orderNumber} from Shiv Furniture`,
+            html: emailHtml,
+          });
+
+          console.log(`✅ Sales order email sent to ${order.customer.email}`);
+        } catch (emailError) {
+          console.error('Failed to send email:', emailError);
+        }
+      } else {
+        console.log('⚠️ Customer does not have an email address. Email not sent.');
+      }
+    }
+
+    // Create Invoice when status changes to CONFIRMED
+    if (body.status === 'CONFIRMED') {
+      try {
+        // Check if invoice already exists for this SO
+        const existingInvoice = await prisma.invoice.findFirst({
+          where: { salesOrderId: id },
+        });
+
+        if (!existingInvoice) {
+          // Generate invoice number
+          const lastInvoice = await prisma.invoice.findFirst({
+            orderBy: { invoiceNumber: 'desc' },
+          });
+          const lastNum = lastInvoice ? parseInt(lastInvoice.invoiceNumber.replace('INV-', '')) : 0;
+          const invoiceNumber = `INV-${String(lastNum + 1).padStart(5, '0')}`;
+
+          // Create the invoice with lines from SO
+          await prisma.invoice.create({
+            data: {
+              invoiceNumber,
+              customerId: order.customerId,
+              salesOrderId: id,
+              invoiceDate: new Date(),
+              dueDate: order.expectedDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              status: 'POSTED',
+              subtotal: order.subtotal,
+              taxAmount: order.taxAmount,
+              totalAmount: order.totalAmount,
+              paidAmount: 0,
+              notes: `Invoice created from Sales Order ${order.orderNumber}`,
+              lines: {
+                create: order.lines.map((line: any) => ({
+                  productId: line.productId,
+                  description: line.description,
+                  quantity: line.quantity,
+                  unitPrice: line.unitPrice,
+                  taxRate: line.taxRate,
+                  taxAmount: line.taxAmount,
+                  lineTotal: line.lineTotal,
+                  analyticalAccountId: line.analyticalAccountId,
+                })),
+              },
+            },
+          });
+          console.log(`✅ Invoice ${invoiceNumber} created for SO ${order.orderNumber}`);
+        }
+      } catch (invoiceError) {
+        console.error('Failed to create invoice:', invoiceError);
+      }
+    }
 
     return NextResponse.json({ order });
   } catch (error) {

@@ -41,9 +41,9 @@ const menuItems = [
     children: [
       { label: 'Contacts', href: '/dashboard/contacts', icon: Users },
       { label: 'Products', href: '/dashboard/products', icon: Package },
-      { label: 'Cost Centers', href: '/dashboard/analytical-accounts', icon: Building },
+      { label: 'Analytics Master', href: '/dashboard/analytical-accounts', icon: Building },
       { label: 'Budgets', href: '/dashboard/budgets', icon: Wallet },
-      { label: 'Auto Analytical Rules', href: '/dashboard/auto-analytical-rules', icon: Settings },
+      { label: 'Auto Analytical Model', href: '/dashboard/auto-analytical-rules', icon: Settings },
     ],
   },
   {
@@ -67,14 +67,6 @@ const menuItems = [
     href: '/dashboard/payments',
     icon: CreditCard,
   },
-  {
-    label: 'Reports',
-    icon: BarChart3,
-    children: [
-      { label: 'Budget vs Actual', href: '/dashboard/reports/budget-vs-actual', icon: BarChart3 },
-      { label: 'Cost Center Performance', href: '/dashboard/reports/cost-center-performance', icon: PieChart },
-    ],
-  },
 ];
 
 export default function DashboardLayout({
@@ -87,7 +79,7 @@ export default function DashboardLayout({
   const { user, setUser, loading } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [expandedMenus, setExpandedMenus] = useState<string[]>(['Master Data', 'Purchases', 'Sales', 'Reports']);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(['Master Data', 'Purchases', 'Sales']);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'ADMIN')) {

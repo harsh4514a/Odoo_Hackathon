@@ -71,6 +71,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    
+    // Validation: Sale price should not be less than purchase price
+    if (body.salePrice < body.purchasePrice) {
+      return NextResponse.json({ 
+        error: 'Sale Price cannot be less than Purchase Price' 
+      }, { status: 400 });
+    }
+    
     const code = await getNextSequence('product');
 
     // Determine if categoryId is a custom category UUID or default enum

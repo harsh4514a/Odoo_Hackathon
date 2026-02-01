@@ -44,6 +44,15 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    // Validation: Sale price should not be less than purchase price
+    if (body.salePrice !== undefined && body.purchasePrice !== undefined) {
+      if (body.salePrice < body.purchasePrice) {
+        return NextResponse.json({ 
+          error: 'Sale Price cannot be less than Purchase Price' 
+        }, { status: 400 });
+      }
+    }
+
     // Determine if categoryId is a custom category UUID or default enum
     const isCustomCategory = body.categoryId && body.categoryId.includes('-');
 

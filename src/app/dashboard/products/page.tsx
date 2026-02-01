@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Edit, Trash2, Tag, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Modal } from '@/components/ui/Modal';
 import { Pagination } from '@/components/ui/Pagination';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { LoadingSpinner, EmptyState } from '@/components/ui/States';
-import { Input, Select, Textarea } from '@/components/ui/FormFields';
+import { Input } from '@/components/ui/FormFields';
 
 interface Product {
   id: string;
@@ -16,11 +16,8 @@ interface Product {
   category: string;
   categoryId: string | null;
   categoryRef: { id: string; name: string } | null;
-  unit: string;
   purchasePrice: string;
   salePrice: string;
-  taxRate: string;
-  analyticalAccount: { code: string; name: string } | null;
 }
 
 interface Category {
@@ -41,16 +38,6 @@ const ALL_DEFAULT_CATEGORIES = [
   { value: 'FINISHED_GOODS', label: 'Finished Goods' },
   { value: 'CONSUMABLES', label: 'Consumables' },
   { value: 'SERVICES', label: 'Services' },
-];
-
-const units = [
-  { value: 'PCS', label: 'Pieces' },
-  { value: 'KG', label: 'Kilograms' },
-  { value: 'LTR', label: 'Litres' },
-  { value: 'MTR', label: 'Meters' },
-  { value: 'CFT', label: 'Cubic Feet' },
-  { value: 'SET', label: 'Sets' },
-  { value: 'BOX', label: 'Boxes' },
 ];
 
 const formatCurrency = (amount: string | number) => {
@@ -76,6 +63,20 @@ export default function ProductsPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryFormData, setCategoryFormData] = useState({ name: '', description: '' });
   const [hiddenDefaultCategories, setHiddenDefaultCategories] = useState<string[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const categoryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) {
+        setShowCategoryDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Filter default categories based on hidden state
   const defaultCategories = ALL_DEFAULT_CATEGORIES.filter(
@@ -83,14 +84,9 @@ export default function ProductsPage() {
   );
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
     categoryId: '',
-    unit: 'PCS',
     purchasePrice: '',
     salePrice: '',
-    taxRate: '18',
-    hsnCode: '',
-    analyticalAccountId: '',
   });
 
   const fetchProducts = async () => {
@@ -153,6 +149,16 @@ export default function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const purchasePrice = parseFloat(formData.purchasePrice);
+    const salePrice = parseFloat(formData.salePrice);
+    
+    // Validation: Sale price should not be less than purchase price
+    if (salePrice < purchasePrice) {
+      toast.error('Sale Price cannot be less than Purchase Price. You would be selling at a loss!');
+      return;
+    }
+    
     try {
       const url = editingProduct 
         ? `/api/products/${editingProduct.id}` 
@@ -164,11 +170,9 @@ export default function ProductsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          purchasePrice: parseFloat(formData.purchasePrice),
-          salePrice: parseFloat(formData.salePrice),
-          taxRate: parseFloat(formData.taxRate),
+          purchasePrice: purchasePrice,
+          salePrice: salePrice,
           categoryId: formData.categoryId || null,
-          analyticalAccountId: formData.analyticalAccountId || null,
         }),
       });
 
@@ -246,16 +250,12 @@ export default function ProductsPage() {
   const resetForm = () => {
     setFormData({
       name: '',
-      description: '',
       categoryId: '',
-      unit: 'PCS',
       purchasePrice: '',
       salePrice: '',
-      taxRate: '18',
-      hsnCode: '',
-      analyticalAccountId: '',
     });
     setEditingProduct(null);
+    setNewCategoryName('');
   };
 
   const resetCategoryForm = () => {
@@ -267,15 +267,17 @@ export default function ProductsPage() {
     setEditingProduct(product);
     setFormData({
       name: product.name,
-      description: '',
-      categoryId: product.categoryId || '',
-      unit: product.unit,
+      categoryId: product.categoryId || product.category || '',
       purchasePrice: product.purchasePrice,
       salePrice: product.salePrice,
-      taxRate: product.taxRate,
-      hsnCode: '',
-      analyticalAccountId: product.analyticalAccount?.code || '',
     });
+    // Set the category name for display
+    if (product.categoryRef) {
+      setNewCategoryName(product.categoryRef.name);
+    } else {
+      const defaultCat = ALL_DEFAULT_CATEGORIES.find(c => c.value === product.category);
+      setNewCategoryName(defaultCat?.label || '');
+    }
     setIsModalOpen(true);
   };
 
@@ -373,11 +375,8 @@ export default function ProductsPage() {
                   <th>Code</th>
                   <th>Name</th>
                   <th>Category</th>
-                  <th>Unit</th>
                   <th>Purchase Price</th>
                   <th>Sale Price</th>
-                  <th>Tax %</th>
-                  <th>Cost Center</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -395,17 +394,8 @@ export default function ProductsPage() {
                         <StatusBadge status={product.category} />
                       )}
                     </td>
-                    <td>{product.unit}</td>
                     <td>{formatCurrency(product.purchasePrice)}</td>
                     <td>{formatCurrency(product.salePrice)}</td>
-                    <td>{product.taxRate}%</td>
-                    <td>
-                      {product.analyticalAccount ? (
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          {product.analyticalAccount.code}
-                        </span>
-                      ) : '-'}
-                    </td>
                     <td>
                       <div className="flex items-center gap-2">
                         <button
@@ -443,50 +433,90 @@ export default function ProductsPage() {
           resetForm();
         }}
         title={editingProduct ? 'Edit Product' : 'Add Product'}
-        size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
-            label="Name *"
+            label="Product Name *"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             required
           />
 
-          <Textarea
-            label="Description"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          />
-
-          <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Category *"
-              value={formData.categoryId}
-              onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-              options={allCategories}
-              required
-            />
-            <Select
-              label="Unit *"
-              value={formData.unit}
-              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-              options={units}
-              required
-            />
+          {/* Category Selection with Create on the fly */}
+          <div className="relative" ref={categoryDropdownRef}>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Category *
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => {
+                  setNewCategoryName(e.target.value);
+                  setShowCategoryDropdown(true);
+                  // Clear categoryId when typing
+                  setFormData({ ...formData, categoryId: '' });
+                }}
+                onFocus={() => setShowCategoryDropdown(true)}
+                placeholder="Type to search or create new category"
+                className="input-field w-full"
+                required
+              />
+              {showCategoryDropdown && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {/* Filtered existing categories */}
+                  {allCategories
+                    .filter(c => c.label.toLowerCase().includes(newCategoryName.toLowerCase()))
+                    .map((cat) => (
+                      <button
+                        key={cat.value}
+                        type="button"
+                        onClick={() => {
+                          setNewCategoryName(cat.label);
+                          setFormData({ ...formData, categoryId: cat.value });
+                          setShowCategoryDropdown(false);
+                        }}
+                        className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  {/* Create new category option */}
+                  {newCategoryName && !allCategories.some(c => c.label.toLowerCase() === newCategoryName.toLowerCase()) && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/categories', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: newCategoryName, description: '' }),
+                          });
+                          if (!res.ok) throw new Error('Failed to create category');
+                          const data = await res.json();
+                          toast.success('Category created');
+                          fetchCategories();
+                          setFormData({ ...formData, categoryId: data.category.id });
+                          setShowCategoryDropdown(false);
+                        } catch (error) {
+                          toast.error('Failed to create category');
+                        }
+                      }}
+                      className="w-full px-4 py-2 text-left hover:bg-blue-50 dark:hover:bg-blue-900 text-sm text-blue-600 dark:text-blue-400 border-t border-gray-200 dark:border-gray-700"
+                    >
+                      <Plus className="w-4 h-4 inline mr-2" />
+                      Create "{newCategoryName}"
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Type to search or create new category on the fly</p>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Purchase Price *"
-              type="number"
-              step="0.01"
-              value={formData.purchasePrice}
-              onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })}
-              required
-            />
-            <Input
-              label="Sale Price *"
+              label="Sales Price *"
               type="number"
               step="0.01"
               value={formData.salePrice}
@@ -494,25 +524,12 @@ export default function ProductsPage() {
               required
             />
             <Input
-              label="Tax Rate (%)"
+              label="Purchase Price *"
               type="number"
               step="0.01"
-              value={formData.taxRate}
-              onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="HSN Code"
-              value={formData.hsnCode}
-              onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
-            />
-            <Select
-              label="Cost Center"
-              value={formData.analyticalAccountId}
-              onChange={(e) => setFormData({ ...formData, analyticalAccountId: e.target.value })}
-              options={analyticalAccounts.map((a) => ({ value: a.id, label: `${a.code} - ${a.name}` }))}
+              value={formData.purchasePrice}
+              onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })}
+              required
             />
           </div>
 

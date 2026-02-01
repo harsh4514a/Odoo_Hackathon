@@ -1,13 +1,43 @@
 import prisma from './prisma';
 
+const SEQUENCE_DEFAULTS: Record<string, { prefix: string; padding: number }> = {
+  contact: { prefix: 'CONT', padding: 5 },
+  product: { prefix: 'PROD', padding: 5 },
+  purchaseOrder: { prefix: 'PO', padding: 5 },
+  vendorBill: { prefix: 'BILL', padding: 5 },
+  salesOrder: { prefix: 'SO', padding: 5 },
+  invoice: { prefix: 'INV', padding: 5 },
+  payment: { prefix: 'PAY', padding: 5 },
+  analyticalAccount: { prefix: 'AA', padding: 4 },
+};
+
 export async function getNextSequence(sequenceName: string): Promise<string> {
-  const sequence = await prisma.sequence.update({
+  // Try to update existing sequence
+  let sequence = await prisma.sequence.findUnique({
+    where: { name: sequenceName },
+  });
+
+  // If sequence doesn't exist, create it
+  if (!sequence) {
+    const defaults = SEQUENCE_DEFAULTS[sequenceName] || { prefix: sequenceName.toUpperCase().slice(0, 4), padding: 5 };
+    sequence = await prisma.sequence.create({
+      data: {
+        name: sequenceName,
+        prefix: defaults.prefix,
+        nextNumber: 1,
+        padding: defaults.padding,
+      },
+    });
+  }
+
+  // Now increment and return
+  const updated = await prisma.sequence.update({
     where: { name: sequenceName },
     data: { nextNumber: { increment: 1 } },
   });
 
-  const number = (sequence.nextNumber - 1).toString().padStart(sequence.padding, '0');
-  return `${sequence.prefix}-${number}`;
+  const number = (updated.nextNumber - 1).toString().padStart(updated.padding, '0');
+  return `${updated.prefix}-${number}`;
 }
 
 export function formatCurrency(amount: number | string): string {

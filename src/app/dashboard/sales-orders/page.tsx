@@ -25,14 +25,14 @@ interface SalesOrder {
   id: string;
   orderNumber: string;
   customerId: string;
-  customer: { name: string };
+  customer: { name: string; email?: string };
   orderDate: string;
-  expectedDelivery: string | null;
+  expectedDate: string | null;
   status: string;
   notes: string | null;
   subtotal: string;
   taxAmount: string;
-  total: string;
+  totalAmount: string;
   lines: SalesOrderLine[];
 }
 
@@ -167,13 +167,14 @@ export default function SalesOrdersPage() {
         body: JSON.stringify({
           customerId: formData.customerId,
           orderDate: formData.orderDate,
-          expectedDelivery: formData.expectedDelivery || null,
+          expectedDate: formData.expectedDelivery || null,
           notes: formData.notes || null,
           lines: validLines.map(l => ({
             productId: l.productId,
             description: l.description,
             quantity: parseFloat(l.quantity.toString()),
             unitPrice: parseFloat(l.unitPrice),
+            taxRate: 0,
             analyticalAccountId: l.analyticalAccountId || null,
           })),
         }),
@@ -238,7 +239,7 @@ export default function SalesOrdersPage() {
     setFormData({
       customerId: order.customerId,
       orderDate: order.orderDate.split('T')[0],
-      expectedDelivery: order.expectedDelivery?.split('T')[0] || '',
+      expectedDelivery: order.expectedDate?.split('T')[0] || '',
       notes: order.notes || '',
       lines: order.lines.map(l => ({
         productId: l.productId,
@@ -346,89 +347,93 @@ export default function SalesOrdersPage() {
       ) : (
         <>
           <div className="card overflow-hidden">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Order #</th>
-                  <th>Customer</th>
-                  <th>Date</th>
-                  <th>Expected Delivery</th>
-                  <th>Total</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id}>
-                    <td className="font-medium text-gray-900 dark:text-white">{order.orderNumber}</td>
-                    <td>{order.customer.name}</td>
-                    <td>{formatDate(order.orderDate)}</td>
-                    <td>{order.expectedDelivery ? formatDate(order.expectedDelivery) : '-'}</td>
-                    <td className="font-semibold">{formatCurrency(order.total)}</td>
-                    <td>
-                      <StatusBadge status={order.status} config={STATUS_CONFIG} />
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setViewingOrder(order); setIsViewModalOpen(true); }}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {order.status === 'DRAFT' && (
-                          <>
-                            <button
-                              onClick={() => openEditModal(order)}
-                              className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(order.id, 'SENT')}
-                              className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900 rounded text-blue-600"
-                              title="Send to Customer"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {order.status === 'SENT' && (
-                          <>
-                            <button
-                              onClick={() => handleStatusChange(order.id, 'CONFIRMED')}
-                              className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900 rounded text-green-600"
-                              title="Confirm"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(order.id, 'CANCELLED')}
-                              className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                              title="Cancel"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {order.status === 'DRAFT' && (
-                          <button
-                            onClick={() => handleDelete(order.id)}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expected Delivery</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                  {orders.map((order) => (
+                    <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-primary-600 dark:text-primary-400">{order.orderNumber}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-900 dark:text-white">{order.customer.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{formatDate(order.orderDate)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{order.expectedDate ? formatDate(order.expectedDate) : '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900 dark:text-white">{formatCurrency(order.totalAmount)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <StatusBadge status={order.status} config={STATUS_CONFIG} />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => { setViewingOrder(order); setIsViewModalOpen(true); }}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                          </button>
+                          {order.status === 'DRAFT' && (
+                            <>
+                              <button
+                                onClick={() => openEditModal(order)}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(order.id, 'SENT')}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm font-medium"
+                                title="Send to Customer"
+                              >
+                                <Send className="w-4 h-4" />
+                                Send
+                              </button>
+                            </>
+                          )}
+                          {order.status === 'SENT' && (
+                            <>
+                              <button
+                                onClick={() => handleStatusChange(order.id, 'CONFIRMED')}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-1.5 text-sm font-medium"
+                                title="Confirm Order"
+                              >
+                                <Check className="w-4 h-4" />
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(order.id, 'CANCELLED')}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
+                                title="Cancel"
+                              >
+                                <X className="w-4 h-4 text-red-600" />
+                              </button>
+                            </>
+                          )}
+                          {order.status === 'DRAFT' && (
+                            <button
+                              onClick={() => handleDelete(order.id)}
+                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
           
           <Pagination
@@ -607,7 +612,7 @@ export default function SalesOrdersPage() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Expected Delivery</p>
-                <p className="font-medium">{viewingOrder.expectedDelivery ? formatDate(viewingOrder.expectedDelivery) : '-'}</p>
+                <p className="font-medium">{viewingOrder.expectedDate ? formatDate(viewingOrder.expectedDate) : '-'}</p>
               </div>
             </div>
 

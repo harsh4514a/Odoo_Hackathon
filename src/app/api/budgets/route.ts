@@ -10,13 +10,18 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const analyticalAccountId = searchParams.get('analyticalAccountId');
+    const status = searchParams.get('status');
+    const stage = searchParams.get('stage');
     const year = searchParams.get('year');
 
     const where: any = { isActive: true };
     
-    if (analyticalAccountId) {
-      where.analyticalAccountId = analyticalAccountId;
+    if (status) {
+      where.status = status;
+    }
+
+    if (stage) {
+      where.stage = stage;
     }
 
     if (year) {
@@ -29,13 +34,13 @@ export async function GET(request: NextRequest) {
     const budgets = await prisma.budget.findMany({
       where,
       include: {
-        analyticalAccount: true,
-        revisionHistory: {
-          orderBy: { revisedAt: 'desc' },
-          take: 5,
+        budgetLines: {
+          include: {
+            analyticalAccount: true,
+          },
         },
       },
-      orderBy: { periodStart: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
 
     return NextResponse.json({ budgets });
@@ -54,33 +59,30 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    // Check for duplicate budget for same cost center and period
-    const existing = await prisma.budget.findFirst({
-      where: {
-        analyticalAccountId: body.analyticalAccountId,
-        periodStart: new Date(body.periodStart),
-        periodEnd: new Date(body.periodEnd),
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { error: 'Budget already exists for this cost center and period' },
-        { status: 400 }
-      );
-    }
-
     const budget = await prisma.budget.create({
       data: {
         name: body.name,
-        analyticalAccountId: body.analyticalAccountId,
         periodStart: new Date(body.periodStart),
         periodEnd: new Date(body.periodEnd),
-        amount: body.amount,
+        status: body.status || 'NEW',
+        stage: body.stage || 'DRAFT',
         notes: body.notes,
+        revisedBudgetId: body.revisedBudgetId,
+        budgetLines: body.budgetLines?.length > 0 ? {
+          create: body.budgetLines.map((line: any) => ({
+            analyticalAccountId: line.analyticalAccountId,
+            type: line.type || 'EXPENSE',
+            budgetedAmount: line.budgetedAmount,
+            achievedAmount: line.achievedAmount || 0,
+          })),
+        } : undefined,
       },
       include: {
-        analyticalAccount: true,
+        budgetLines: {
+          include: {
+            analyticalAccount: true,
+          },
+        },
       },
     });
 

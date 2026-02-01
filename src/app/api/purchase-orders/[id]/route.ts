@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getCurrentUser, isAdmin } from '@/lib/auth';
 import { parseDecimal } from '@/lib/utils';
 import { applyAutoAnalyticalToLines } from '@/lib/auto-analytical';
+import { sendEmail, generatePurchaseOrderEmail } from '@/lib/email';
 
 export async function GET(
   request: NextRequest,
@@ -119,6 +120,89 @@ export async function PUT(
         },
       });
 
+      // Send email and create Vendor Bill if status is CONFIRMED
+      if (body.status === 'SENT') {
+        // Send email to vendor when order is sent
+        if (order.vendor?.email) {
+          try {
+            const emailHtml = generatePurchaseOrderEmail({
+              orderNumber: order.orderNumber,
+              vendorName: order.vendor.name,
+              vendorEmail: order.vendor.email,
+              orderDate: order.orderDate,
+              expectedDate: order.expectedDate,
+              lines: order.lines,
+              totalAmount: order.totalAmount,
+              notes: order.notes,
+            });
+
+            await sendEmail({
+              to: order.vendor.email,
+              subject: `Purchase Order ${order.orderNumber} from Shiv Furniture - Action Required`,
+              html: emailHtml,
+            });
+
+            console.log(`✅ Purchase order email sent to ${order.vendor.email}`);
+          } catch (emailError) {
+            console.error('Failed to send email:', emailError);
+            // Don't fail the request if email fails
+          }
+        }
+      }
+
+      // Create Vendor Bill when status changes to CONFIRMED (after vendor confirms)
+      if (body.status === 'CONFIRMED') {
+        // Create Vendor Bill automatically
+        try {
+          // Check if vendor bill already exists for this PO
+          const existingBill = await prisma.vendorBill.findFirst({
+            where: { purchaseOrderId: id },
+          });
+
+          if (!existingBill) {
+            // Generate bill number
+            const lastBill = await prisma.vendorBill.findFirst({
+              orderBy: { billNumber: 'desc' },
+            });
+            const lastNum = lastBill ? parseInt(lastBill.billNumber.replace('BILL-', '')) : 0;
+            const billNumber = `BILL-${String(lastNum + 1).padStart(5, '0')}`;
+
+            // Create the vendor bill with lines from PO
+            await prisma.vendorBill.create({
+              data: {
+                billNumber,
+                vendorId: order.vendorId,
+                purchaseOrderId: id,
+                billDate: new Date(),
+                dueDate: order.expectedDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                status: 'POSTED',
+                subtotal: order.subtotal,
+                taxAmount: order.taxAmount,
+                totalAmount: order.totalAmount,
+                paidAmount: 0,
+                notes: `Bill created from Purchase Order ${order.orderNumber}`,
+                lines: {
+                  create: order.lines.map((line: any) => ({
+                    productId: line.productId,
+                    description: line.description,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    taxRate: line.taxRate,
+                    taxAmount: line.taxAmount,
+                    lineTotal: line.lineTotal,
+                    analyticalAccountId: line.analyticalAccountId,
+                  })),
+                },
+              },
+            });
+            console.log(`✅ Vendor Bill ${billNumber} created for PO ${order.orderNumber}`);
+          }
+        } catch (billError) {
+          console.error('Failed to create vendor bill:', billError);
+          // Don't fail the request if bill creation fails
+        }
+      }
+
       return NextResponse.json({ order });
     }
 
@@ -140,6 +224,82 @@ export async function PUT(
         },
       },
     });
+
+    // Send email when status changes to SENT
+    if (body.status === 'SENT') {
+      if (order.vendor?.email) {
+        try {
+          const emailHtml = generatePurchaseOrderEmail({
+            orderNumber: order.orderNumber,
+            vendorName: order.vendor.name,
+            vendorEmail: order.vendor.email,
+            orderDate: order.orderDate,
+            expectedDate: order.expectedDate,
+            lines: order.lines,
+            totalAmount: order.totalAmount,
+            notes: order.notes,
+          });
+
+          await sendEmail({
+            to: order.vendor.email,
+            subject: `Purchase Order ${order.orderNumber} from Shiv Furniture - Action Required`,
+            html: emailHtml,
+          });
+
+          console.log(`✅ Purchase order email sent to ${order.vendor.email}`);
+        } catch (emailError) {
+          console.error('Failed to send email:', emailError);
+        }
+      }
+    }
+
+    // Create Vendor Bill when status changes to CONFIRMED (after vendor confirms)
+    if (body.status === 'CONFIRMED') {
+      try {
+        const existingBill = await prisma.vendorBill.findFirst({
+          where: { purchaseOrderId: id },
+        });
+
+        if (!existingBill) {
+          const lastBill = await prisma.vendorBill.findFirst({
+            orderBy: { billNumber: 'desc' },
+          });
+          const lastNum = lastBill ? parseInt(lastBill.billNumber.replace('BILL-', '')) : 0;
+          const billNumber = `BILL-${String(lastNum + 1).padStart(5, '0')}`;
+
+          await prisma.vendorBill.create({
+            data: {
+              billNumber,
+              vendorId: order.vendorId,
+              purchaseOrderId: id,
+              billDate: new Date(),
+              dueDate: order.expectedDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              status: 'DRAFT',
+              subtotal: order.subtotal,
+              taxAmount: order.taxAmount,
+              totalAmount: order.totalAmount,
+              paidAmount: 0,
+              notes: `Bill created from Purchase Order ${order.orderNumber}`,
+              lines: {
+                create: order.lines.map((line: any) => ({
+                  productId: line.productId,
+                  description: line.description,
+                  quantity: line.quantity,
+                  unitPrice: line.unitPrice,
+                  taxRate: line.taxRate,
+                  taxAmount: line.taxAmount,
+                  lineTotal: line.lineTotal,
+                  analyticalAccountId: line.analyticalAccountId,
+                })),
+              },
+            },
+          });
+          console.log(`✅ Vendor Bill ${billNumber} created for PO ${order.orderNumber}`);
+        }
+      } catch (billError) {
+        console.error('Failed to create vendor bill:', billError);
+      }
+    }
 
     return NextResponse.json({ order });
   } catch (error) {

@@ -20,13 +20,16 @@ export async function GET(request: NextRequest) {
 
     const where: any = { isActive: true };
     
-    if (type && ['CUSTOMER', 'VENDOR', 'BOTH'].includes(type)) {
-      if (type === 'CUSTOMER') {
+    // Normalize type to uppercase for comparison
+    const normalizedType = type?.toUpperCase();
+    
+    if (normalizedType && ['CUSTOMER', 'VENDOR', 'BOTH'].includes(normalizedType)) {
+      if (normalizedType === 'CUSTOMER') {
         where.type = { in: ['CUSTOMER', 'BOTH'] };
-      } else if (type === 'VENDOR') {
+      } else if (normalizedType === 'VENDOR') {
         where.type = { in: ['VENDOR', 'BOTH'] };
       } else {
-        where.type = type;
+        where.type = normalizedType;
       }
     }
     

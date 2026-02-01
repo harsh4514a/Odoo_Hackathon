@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         children: true,
         _count: {
           select: {
-            budgets: true,
+            budgetLines: true,
             products: true,
           },
         },

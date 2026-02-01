@@ -48,31 +48,31 @@ enum ContactType {
 }
 
 model Contact {
-  id            String      @id @default(uuid())
-  code          String      @unique
-  name          String
-  type          ContactType
-  email         String?
-  phone         String?
-  address       String?
-  city          String?
-  state         String?
-  country       String?     @default("India")
-  pincode       String?
-  gstin         String?
-  pan           String?
-  creditLimit   Decimal?    @db.Decimal(15, 2)
-  paymentTerms  Int?        @default(30) // Days
-  isActive      Boolean     @default(true)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id           String      @id @default(uuid())
+  code         String      @unique
+  name         String
+  type         ContactType
+  email        String?
+  phone        String?
+  address      String?
+  city         String?
+  state        String?
+  country      String?     @default("India")
+  pincode      String?
+  gstin        String?
+  pan          String?
+  creditLimit  Decimal?    @db.Decimal(15, 2)
+  paymentTerms Int?        @default(30) // Days
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  user          User?
-  purchaseOrders  PurchaseOrder[]
-  vendorBills     VendorBill[]
-  salesOrders     SalesOrder[]
-  invoices        Invoice[]
-  payments        Payment[]
+  user           User?
+  purchaseOrders PurchaseOrder[]
+  vendorBills    VendorBill[]
+  salesOrders    SalesOrder[]
+  invoices       Invoice[]
+  payments       Payment[]
 
   @@map("contacts")
 }
@@ -99,94 +99,104 @@ model Category {
 }
 
 model Product {
-  id                  String          @id @default(uuid())
-  code                String          @unique
+  id                  String             @id @default(uuid())
+  code                String             @unique
   name                String
   description         String?
-  category            ProductCategory @default(CUSTOM)
+  category            ProductCategory    @default(CUSTOM)
   categoryId          String?
-  categoryRef         Category?       @relation(fields: [categoryId], references: [id])
-  unit                String          @default("PCS")
-  purchasePrice       Decimal         @db.Decimal(15, 2)
-  salePrice           Decimal         @db.Decimal(15, 2)
-  taxRate             Decimal         @default(18) @db.Decimal(5, 2) // GST percentage
+  categoryRef         Category?          @relation(fields: [categoryId], references: [id])
+  unit                String             @default("PCS")
+  purchasePrice       Decimal            @db.Decimal(15, 2)
+  salePrice           Decimal            @db.Decimal(15, 2)
+  taxRate             Decimal            @default(18) @db.Decimal(5, 2) // GST percentage
   hsnCode             String?
   analyticalAccountId String?
   analyticalAccount   AnalyticalAccount? @relation(fields: [analyticalAccountId], references: [id])
-  isActive            Boolean         @default(true)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  isActive            Boolean            @default(true)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 
-  purchaseOrderLines  PurchaseOrderLine[]
-  vendorBillLines     VendorBillLine[]
-  salesOrderLines     SalesOrderLine[]
-  invoiceLines        InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
+  vendorBillLines    VendorBillLine[]
+  salesOrderLines    SalesOrderLine[]
+  invoiceLines       InvoiceLine[]
 
   @@map("products")
 }
 
 model AnalyticalAccount {
-  id          String    @id @default(uuid())
-  code        String    @unique
+  id          String              @id @default(uuid())
+  code        String              @unique
   name        String
   description String?
+  status      String              @default("NEW") // NEW, CONFIRMED, ARCHIVED
   parentId    String?
   parent      AnalyticalAccount?  @relation("AnalyticalAccountHierarchy", fields: [parentId], references: [id])
   children    AnalyticalAccount[] @relation("AnalyticalAccountHierarchy")
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
-  products              Product[]
-  budgets               Budget[]
-  autoAnalyticalRules   AutoAnalyticalRule[]
-  purchaseOrderLines    PurchaseOrderLine[]
-  vendorBillLines       VendorBillLine[]
-  salesOrderLines       SalesOrderLine[]
-  invoiceLines          InvoiceLine[]
+  products            Product[]
+  budgetLines         BudgetLine[]
+  autoAnalyticalRules AutoAnalyticalRule[]
+  purchaseOrderLines  PurchaseOrderLine[]
+  vendorBillLines     VendorBillLine[]
+  salesOrderLines     SalesOrderLine[]
+  invoiceLines        InvoiceLine[]
 
   @@map("analytical_accounts")
 }
 
 model Budget {
-  id                  String            @id @default(uuid())
-  name                String
-  analyticalAccountId String
-  analyticalAccount   AnalyticalAccount @relation(fields: [analyticalAccountId], references: [id])
-  periodStart         DateTime
-  periodEnd           DateTime
-  amount              Decimal           @db.Decimal(15, 2)
-  revisedAmount       Decimal?          @db.Decimal(15, 2)
-  notes               String?
-  isActive            Boolean           @default(true)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      String   @default("NEW") // NEW, CONFIRMED, REVISED, ARCHIVED
+  stage       String   @default("DRAFT") // DRAFT, CONFIRM, REVISED, CANCELLED
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  revisionHistory     BudgetRevision[]
+  budgetLines     BudgetLine[]
+  revisedBudget   Budget?      @relation("BudgetRevision", fields: [revisedBudgetId], references: [id])
+  revisedBudgetId String?
+  originalBudgets Budget[]     @relation("BudgetRevision")
 
-  @@unique([analyticalAccountId, periodStart, periodEnd])
   @@map("budgets")
 }
 
-model BudgetRevision {
-  id              String    @id @default(uuid())
-  budgetId        String
-  budget          Budget    @relation(fields: [budgetId], references: [id], onDelete: Cascade)
-  previousAmount  Decimal   @db.Decimal(15, 2)
-  newAmount       Decimal   @db.Decimal(15, 2)
-  reason          String?
-  revisedBy       String
-  revisedAt       DateTime  @default(now())
+model BudgetLine {
+  id                  String            @id @default(uuid())
+  budgetId            String
+  budget              Budget            @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  analyticalAccountId String
+  analyticalAccount   AnalyticalAccount @relation(fields: [analyticalAccountId], references: [id])
+  type                String            @default("EXPENSE") // INCOME, EXPENSE
+  budgetedAmount      Decimal           @db.Decimal(15, 2)
+  achievedAmount      Decimal           @default(0) @db.Decimal(15, 2)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
-  @@map("budget_revisions")
+  @@map("budget_lines")
 }
 
 model AutoAnalyticalRule {
   id                  String            @id @default(uuid())
   name                String
   description         String?
-  productCategory     ProductCategory?
+  status              String            @default("NEW") // NEW, CONFIRMED, ARCHIVED
+  ruleStatus          String            @default("DRAFT") // DRAFT, CONFIRM, CANCELLED
+  partnerTag          String? // Tag for partner filtering
+  partnerId           String? // Specific partner (contact)
+  productCategoryId   String? // Product category (custom category)
+  productId           String? // Specific product
+  productCategory     ProductCategory? // Legacy enum category
   productNameContains String?
+  autoApply           Boolean           @default(true) // Auto apply analytical model
   analyticalAccountId String
   analyticalAccount   AnalyticalAccount @relation(fields: [analyticalAccountId], references: [id])
   priority            Int               @default(1)
@@ -203,6 +213,7 @@ model AutoAnalyticalRule {
 
 enum OrderStatus {
   DRAFT
+  SENT
   CONFIRMED
   PARTIALLY_RECEIVED
   RECEIVED
@@ -210,41 +221,41 @@ enum OrderStatus {
 }
 
 model PurchaseOrder {
-  id              String        @id @default(uuid())
-  orderNumber     String        @unique
-  vendorId        String
-  vendor          Contact       @relation(fields: [vendorId], references: [id])
-  orderDate       DateTime      @default(now())
-  expectedDate    DateTime?
-  status          OrderStatus   @default(DRAFT)
-  subtotal        Decimal       @db.Decimal(15, 2)
-  taxAmount       Decimal       @db.Decimal(15, 2)
-  totalAmount     Decimal       @db.Decimal(15, 2)
-  notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id           String      @id @default(uuid())
+  orderNumber  String      @unique
+  vendorId     String
+  vendor       Contact     @relation(fields: [vendorId], references: [id])
+  orderDate    DateTime    @default(now())
+  expectedDate DateTime?
+  status       OrderStatus @default(DRAFT)
+  subtotal     Decimal     @db.Decimal(15, 2)
+  taxAmount    Decimal     @db.Decimal(15, 2)
+  totalAmount  Decimal     @db.Decimal(15, 2)
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  lines           PurchaseOrderLine[]
-  vendorBills     VendorBill[]
+  lines       PurchaseOrderLine[]
+  vendorBills VendorBill[]
 
   @@map("purchase_orders")
 }
 
 model PurchaseOrderLine {
-  id                  String            @id @default(uuid())
+  id                  String             @id @default(uuid())
   purchaseOrderId     String
-  purchaseOrder       PurchaseOrder     @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrder       PurchaseOrder      @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   productId           String
-  product             Product           @relation(fields: [productId], references: [id])
+  product             Product            @relation(fields: [productId], references: [id])
   description         String?
-  quantity            Decimal           @db.Decimal(15, 3)
-  unitPrice           Decimal           @db.Decimal(15, 2)
-  taxRate             Decimal           @db.Decimal(5, 2)
-  taxAmount           Decimal           @db.Decimal(15, 2)
-  lineTotal           Decimal           @db.Decimal(15, 2)
+  quantity            Decimal            @db.Decimal(15, 3)
+  unitPrice           Decimal            @db.Decimal(15, 2)
+  taxRate             Decimal            @db.Decimal(5, 2)
+  taxAmount           Decimal            @db.Decimal(15, 2)
+  lineTotal           Decimal            @db.Decimal(15, 2)
   analyticalAccountId String?
   analyticalAccount   AnalyticalAccount? @relation(fields: [analyticalAccountId], references: [id])
-  receivedQty         Decimal           @default(0) @db.Decimal(15, 3)
+  receivedQty         Decimal            @default(0) @db.Decimal(15, 3)
 
   @@map("purchase_order_lines")
 }
@@ -258,41 +269,41 @@ enum BillStatus {
 }
 
 model VendorBill {
-  id              String        @id @default(uuid())
-  billNumber      String        @unique
+  id              String         @id @default(uuid())
+  billNumber      String         @unique
   vendorId        String
-  vendor          Contact       @relation(fields: [vendorId], references: [id])
+  vendor          Contact        @relation(fields: [vendorId], references: [id])
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  billDate        DateTime      @default(now())
+  billDate        DateTime       @default(now())
   dueDate         DateTime
-  status          BillStatus    @default(DRAFT)
-  subtotal        Decimal       @db.Decimal(15, 2)
-  taxAmount       Decimal       @db.Decimal(15, 2)
-  totalAmount     Decimal       @db.Decimal(15, 2)
-  paidAmount      Decimal       @default(0) @db.Decimal(15, 2)
+  status          BillStatus     @default(DRAFT)
+  subtotal        Decimal        @db.Decimal(15, 2)
+  taxAmount       Decimal        @db.Decimal(15, 2)
+  totalAmount     Decimal        @db.Decimal(15, 2)
+  paidAmount      Decimal        @default(0) @db.Decimal(15, 2)
   notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
-  lines           VendorBillLine[]
-  payments        Payment[]
+  lines    VendorBillLine[]
+  payments Payment[]
 
   @@map("vendor_bills")
 }
 
 model VendorBillLine {
-  id                  String            @id @default(uuid())
+  id                  String             @id @default(uuid())
   vendorBillId        String
-  vendorBill          VendorBill        @relation(fields: [vendorBillId], references: [id], onDelete: Cascade)
+  vendorBill          VendorBill         @relation(fields: [vendorBillId], references: [id], onDelete: Cascade)
   productId           String
-  product             Product           @relation(fields: [productId], references: [id])
+  product             Product            @relation(fields: [productId], references: [id])
   description         String?
-  quantity            Decimal           @db.Decimal(15, 3)
-  unitPrice           Decimal           @db.Decimal(15, 2)
-  taxRate             Decimal           @db.Decimal(5, 2)
-  taxAmount           Decimal           @db.Decimal(15, 2)
-  lineTotal           Decimal           @db.Decimal(15, 2)
+  quantity            Decimal            @db.Decimal(15, 3)
+  unitPrice           Decimal            @db.Decimal(15, 2)
+  taxRate             Decimal            @db.Decimal(5, 2)
+  taxAmount           Decimal            @db.Decimal(15, 2)
+  lineTotal           Decimal            @db.Decimal(15, 2)
   analyticalAccountId String?
   analyticalAccount   AnalyticalAccount? @relation(fields: [analyticalAccountId], references: [id])
 
@@ -304,41 +315,41 @@ model VendorBillLine {
 // ============================================
 
 model SalesOrder {
-  id              String        @id @default(uuid())
-  orderNumber     String        @unique
-  customerId      String
-  customer        Contact       @relation(fields: [customerId], references: [id])
-  orderDate       DateTime      @default(now())
-  expectedDate    DateTime?
-  status          OrderStatus   @default(DRAFT)
-  subtotal        Decimal       @db.Decimal(15, 2)
-  taxAmount       Decimal       @db.Decimal(15, 2)
-  totalAmount     Decimal       @db.Decimal(15, 2)
-  notes           String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  id           String      @id @default(uuid())
+  orderNumber  String      @unique
+  customerId   String
+  customer     Contact     @relation(fields: [customerId], references: [id])
+  orderDate    DateTime    @default(now())
+  expectedDate DateTime?
+  status       OrderStatus @default(DRAFT)
+  subtotal     Decimal     @db.Decimal(15, 2)
+  taxAmount    Decimal     @db.Decimal(15, 2)
+  totalAmount  Decimal     @db.Decimal(15, 2)
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  lines           SalesOrderLine[]
-  invoices        Invoice[]
+  lines    SalesOrderLine[]
+  invoices Invoice[]
 
   @@map("sales_orders")
 }
 
 model SalesOrderLine {
-  id                  String            @id @default(uuid())
+  id                  String             @id @default(uuid())
   salesOrderId        String
-  salesOrder          SalesOrder        @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  salesOrder          SalesOrder         @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
   productId           String
-  product             Product           @relation(fields: [productId], references: [id])
+  product             Product            @relation(fields: [productId], references: [id])
   description         String?
-  quantity            Decimal           @db.Decimal(15, 3)
-  unitPrice           Decimal           @db.Decimal(15, 2)
-  taxRate             Decimal           @db.Decimal(5, 2)
-  taxAmount           Decimal           @db.Decimal(15, 2)
-  lineTotal           Decimal           @db.Decimal(15, 2)
+  quantity            Decimal            @db.Decimal(15, 3)
+  unitPrice           Decimal            @db.Decimal(15, 2)
+  taxRate             Decimal            @db.Decimal(5, 2)
+  taxAmount           Decimal            @db.Decimal(15, 2)
+  lineTotal           Decimal            @db.Decimal(15, 2)
   analyticalAccountId String?
   analyticalAccount   AnalyticalAccount? @relation(fields: [analyticalAccountId], references: [id])
-  deliveredQty        Decimal           @default(0) @db.Decimal(15, 3)
+  deliveredQty        Decimal            @default(0) @db.Decimal(15, 3)
 
   @@map("sales_order_lines")
 }
@@ -352,41 +363,41 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id              String          @id @default(uuid())
-  invoiceNumber   String          @unique
-  customerId      String
-  customer        Contact         @relation(fields: [customerId], references: [id])
-  salesOrderId    String?
-  salesOrder      SalesOrder?     @relation(fields: [salesOrderId], references: [id])
-  invoiceDate     DateTime        @default(now())
-  dueDate         DateTime
-  status          InvoiceStatus   @default(DRAFT)
-  subtotal        Decimal         @db.Decimal(15, 2)
-  taxAmount       Decimal         @db.Decimal(15, 2)
-  totalAmount     Decimal         @db.Decimal(15, 2)
-  paidAmount      Decimal         @default(0) @db.Decimal(15, 2)
-  notes           String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id            String        @id @default(uuid())
+  invoiceNumber String        @unique
+  customerId    String
+  customer      Contact       @relation(fields: [customerId], references: [id])
+  salesOrderId  String?
+  salesOrder    SalesOrder?   @relation(fields: [salesOrderId], references: [id])
+  invoiceDate   DateTime      @default(now())
+  dueDate       DateTime
+  status        InvoiceStatus @default(DRAFT)
+  subtotal      Decimal       @db.Decimal(15, 2)
+  taxAmount     Decimal       @db.Decimal(15, 2)
+  totalAmount   Decimal       @db.Decimal(15, 2)
+  paidAmount    Decimal       @default(0) @db.Decimal(15, 2)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  lines           InvoiceLine[]
-  payments        Payment[]
+  lines    InvoiceLine[]
+  payments Payment[]
 
   @@map("invoices")
 }
 
 model InvoiceLine {
-  id                  String            @id @default(uuid())
+  id                  String             @id @default(uuid())
   invoiceId           String
-  invoice             Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice             Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   productId           String
-  product             Product           @relation(fields: [productId], references: [id])
+  product             Product            @relation(fields: [productId], references: [id])
   description         String?
-  quantity            Decimal           @db.Decimal(15, 3)
-  unitPrice           Decimal           @db.Decimal(15, 2)
-  taxRate             Decimal           @db.Decimal(5, 2)
-  taxAmount           Decimal           @db.Decimal(15, 2)
-  lineTotal           Decimal           @db.Decimal(15, 2)
+  quantity            Decimal            @db.Decimal(15, 3)
+  unitPrice           Decimal            @db.Decimal(15, 2)
+  taxRate             Decimal            @db.Decimal(5, 2)
+  taxAmount           Decimal            @db.Decimal(15, 2)
+  lineTotal           Decimal            @db.Decimal(15, 2)
   analyticalAccountId String?
   analyticalAccount   AnalyticalAccount? @relation(fields: [analyticalAccountId], references: [id])
 
@@ -398,8 +409,8 @@ model InvoiceLine {
 // ============================================
 
 enum PaymentType {
-  INCOMING  // Customer payment
-  OUTGOING  // Vendor payment
+  INCOMING // Customer payment
+  OUTGOING // Vendor payment
 }
 
 enum PaymentMethod {
@@ -437,11 +448,11 @@ model Payment {
 // ============================================
 
 model Sequence {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  prefix      String
-  nextNumber  Int       @default(1)
-  padding     Int       @default(5)
+  id         String @id @default(uuid())
+  name       String @unique
+  prefix     String
+  nextNumber Int    @default(1)
+  padding    Int    @default(5)
 
   @@map("sequences")
 }

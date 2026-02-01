@@ -16,7 +16,7 @@ interface PurchaseOrderLine {
   description: string;
   quantity: number;
   unitPrice: string;
-  total: string;
+  lineTotal: string;
   analyticalAccountId: string | null;
   analyticalAccount?: { code: string; name: string } | null;
 }
@@ -27,12 +27,12 @@ interface PurchaseOrder {
   vendorId: string;
   vendor: { name: string };
   orderDate: string;
-  expectedDelivery: string | null;
+  expectedDate: string | null;
   status: string;
   notes: string | null;
   subtotal: string;
   taxAmount: string;
-  total: string;
+  totalAmount: string;
   lines: PurchaseOrderLine[];
 }
 
@@ -57,7 +57,7 @@ interface AnalyticalAccount {
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   DRAFT: { label: 'Draft', color: 'gray' },
-  SENT: { label: 'Sent', color: 'blue' },
+  SENT: { label: 'Sent', color: 'orange' },
   CONFIRMED: { label: 'Confirmed', color: 'green' },
   CANCELLED: { label: 'Cancelled', color: 'red' },
 };
@@ -109,10 +109,11 @@ export default function PurchaseOrdersPage() {
       
       const res = await fetch(`/api/purchase-orders?${params}`);
       const data = await res.json();
-      setOrders(data.orders);
-      setTotal(data.pagination.total);
+      setOrders(data.orders || []);
+      setTotal(data.pagination?.total || 0);
     } catch (error) {
       toast.error('Failed to fetch purchase orders');
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -130,9 +131,9 @@ export default function PurchaseOrdersPage() {
       const productsData = await productsRes.json();
       const analyticalData = await analyticalRes.json();
       
-      setVendors(vendorsData.contacts);
-      setProducts(productsData.products);
-      setAnalyticalAccounts(analyticalData.analyticalAccounts);
+      setVendors(vendorsData.contacts || []);
+      setProducts(productsData.products || []);
+      setAnalyticalAccounts(analyticalData.analyticalAccounts || []);
     } catch (error) {
       console.error('Failed to fetch dropdown data');
     }
@@ -155,6 +156,27 @@ export default function PurchaseOrdersPage() {
       return;
     }
 
+    // Validate expected delivery date must be after order date
+    if (formData.expectedDelivery && formData.orderDate) {
+      if (new Date(formData.expectedDelivery) < new Date(formData.orderDate)) {
+        toast.error('Expected delivery date must be after order date');
+        return;
+      }
+    }
+
+    // Validate prices are not below purchase price
+    for (const line of validLines) {
+      const product = products.find(p => p.id === line.productId);
+      if (product) {
+        const minPrice = Number(product.purchasePrice) || 0;
+        const enteredPrice = Number(line.unitPrice) || 0;
+        if (enteredPrice < minPrice) {
+          toast.error(`Price for ${product.name} cannot be lower than purchase price (${formatCurrency(minPrice)})`);
+          return;
+        }
+      }
+    }
+
     try {
       const url = editingOrder 
         ? `/api/purchase-orders/${editingOrder.id}` 
@@ -167,13 +189,14 @@ export default function PurchaseOrdersPage() {
         body: JSON.stringify({
           vendorId: formData.vendorId,
           orderDate: formData.orderDate,
-          expectedDelivery: formData.expectedDelivery || null,
+          expectedDate: formData.expectedDelivery || null,
           notes: formData.notes || null,
           lines: validLines.map(l => ({
             productId: l.productId,
             description: l.description,
             quantity: parseFloat(l.quantity.toString()),
             unitPrice: parseFloat(l.unitPrice),
+            taxRate: 0,
             analyticalAccountId: l.analyticalAccountId || null,
           })),
         }),
@@ -196,7 +219,7 @@ export default function PurchaseOrdersPage() {
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
       const res = await fetch(`/api/purchase-orders/${orderId}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
@@ -238,7 +261,7 @@ export default function PurchaseOrdersPage() {
     setFormData({
       vendorId: order.vendorId,
       orderDate: order.orderDate.split('T')[0],
-      expectedDelivery: order.expectedDelivery?.split('T')[0] || '',
+      expectedDelivery: order.expectedDate?.split('T')[0] || '',
       notes: order.notes || '',
       lines: order.lines.map(l => ({
         productId: l.productId,
@@ -277,6 +300,21 @@ export default function PurchaseOrdersPage() {
         newLines[index].description = product.name;
         newLines[index].unitPrice = product.purchasePrice;
         newLines[index].analyticalAccountId = product.analyticalAccountId || '';
+      }
+    }
+
+    // Validate price - cannot be LOWER than product's purchase price (but can be higher)
+    if (field === 'unitPrice' && newLines[index].productId && value !== '') {
+      const product = products.find(p => p.id === newLines[index].productId);
+      if (product) {
+        const minPrice = Number(product.purchasePrice) || 0;
+        const enteredPrice = Number(value) || 0;
+        if (enteredPrice > 0 && enteredPrice < minPrice) {
+          toast.error(`Price cannot be lower than purchase price (${formatCurrency(minPrice)})`);
+          newLines[index].unitPrice = String(minPrice);
+          setFormData({ ...formData, lines: newLines });
+          return;
+        }
       }
     }
     
@@ -346,89 +384,98 @@ export default function PurchaseOrdersPage() {
       ) : (
         <>
           <div className="card overflow-hidden">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Order #</th>
-                  <th>Vendor</th>
-                  <th>Date</th>
-                  <th>Expected Delivery</th>
-                  <th>Total</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id}>
-                    <td className="font-medium text-gray-900 dark:text-white">{order.orderNumber}</td>
-                    <td>{order.vendor.name}</td>
-                    <td>{formatDate(order.orderDate)}</td>
-                    <td>{order.expectedDelivery ? formatDate(order.expectedDelivery) : '-'}</td>
-                    <td className="font-semibold">{formatCurrency(order.total)}</td>
-                    <td>
-                      <StatusBadge status={order.status} config={STATUS_CONFIG} />
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => { setViewingOrder(order); setIsViewModalOpen(true); }}
-                          className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {order.status === 'DRAFT' && (
-                          <>
-                            <button
-                              onClick={() => openEditModal(order)}
-                              className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                              title="Edit"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(order.id, 'SENT')}
-                              className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900 rounded text-blue-600"
-                              title="Send to Vendor"
-                            >
-                              <Send className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {order.status === 'SENT' && (
-                          <>
-                            <button
-                              onClick={() => handleStatusChange(order.id, 'CONFIRMED')}
-                              className="p-1.5 hover:bg-green-100 dark:hover:bg-green-900 rounded text-green-600"
-                              title="Confirm"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order #</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Vendor</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Order Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expected Delivery</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                  {orders.map((order) => (
+                    <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <td className="px-6 py-4 whitespace-nowrap font-medium text-primary-600 dark:text-primary-400">{order.orderNumber}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-900 dark:text-white">{order.vendor.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{formatDate(order.orderDate)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-400">{order.expectedDate ? formatDate(order.expectedDate) : '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right font-semibold text-gray-900 dark:text-white">{formatCurrency(order.totalAmount || 0)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <StatusBadge status={order.status} />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => { setViewingOrder(order); setIsViewModalOpen(true); }}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                            title="View"
+                          >
+                            <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                          </button>
+                          {order.status === 'DRAFT' && (
+                            <>
+                              <button
+                                onClick={() => openEditModal(order)}
+                                className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Edit className="w-4 h-4 text-blue-600" />
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(order.id, 'SENT')}
+                                className="p-2 hover:bg-orange-100 dark:hover:bg-orange-900 rounded-lg transition-colors"
+                                title="Send to Vendor"
+                              >
+                                <Send className="w-4 h-4 text-orange-600" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(order.id)}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-600" />
+                              </button>
+                            </>
+                          )}
+                          {order.status === 'SENT' && (
+                            <>
+                              <button
+                                onClick={() => handleStatusChange(order.id, 'CONFIRMED')}
+                                className="p-2 hover:bg-green-100 dark:hover:bg-green-900 rounded-lg transition-colors"
+                                title="Confirm Order"
+                              >
+                                <Check className="w-4 h-4 text-green-600" />
+                              </button>
+                              <button
+                                onClick={() => handleStatusChange(order.id, 'CANCELLED')}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
+                                title="Cancel"
+                              >
+                                <X className="w-4 h-4 text-red-600" />
+                              </button>
+                            </>
+                          )}
+                          {order.status === 'CONFIRMED' && (
                             <button
                               onClick={() => handleStatusChange(order.id, 'CANCELLED')}
-                              className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
+                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900 rounded-lg transition-colors"
                               title="Cancel"
                             >
-                              <X className="w-4 h-4" />
+                              <X className="w-4 h-4 text-red-600" />
                             </button>
-                          </>
-                        )}
-                        {order.status === 'DRAFT' && (
-                          <button
-                            onClick={() => handleDelete(order.id)}
-                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900 rounded text-red-600"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
           
           <Pagination
@@ -482,6 +529,16 @@ export default function PurchaseOrdersPage() {
                 <Plus className="w-4 h-4 inline mr-1" />
                 Add Line
               </button>
+            </div>
+
+            {/* Header Labels */}
+            <div className="grid grid-cols-12 gap-2 mb-2 px-3 text-xs font-medium text-gray-500 uppercase">
+              <div className="col-span-3">Product</div>
+              <div className="col-span-2">Qty</div>
+              <div className="col-span-2">Unit Price</div>
+              <div className="col-span-2">Total</div>
+              <div className="col-span-2">Analytics</div>
+              <div className="col-span-1"></div>
             </div>
 
             <div className="space-y-3 max-h-64 overflow-y-auto">
@@ -607,7 +664,7 @@ export default function PurchaseOrdersPage() {
               </div>
               <div>
                 <p className="text-sm text-gray-500">Expected Delivery</p>
-                <p className="font-medium">{viewingOrder.expectedDelivery ? formatDate(viewingOrder.expectedDelivery) : '-'}</p>
+                <p className="font-medium">{viewingOrder.expectedDate ? formatDate(viewingOrder.expectedDate) : '-'}</p>
               </div>
             </div>
 
@@ -626,10 +683,10 @@ export default function PurchaseOrdersPage() {
                 <tbody>
                   {viewingOrder.lines.map((line, idx) => (
                     <tr key={idx} className="border-b dark:border-gray-700">
-                      <td className="p-2">{line.description}</td>
+                      <td className="p-2">{line.product?.name || line.description}</td>
                       <td className="p-2 text-right">{line.quantity}</td>
                       <td className="p-2 text-right">{formatCurrency(line.unitPrice)}</td>
-                      <td className="p-2 text-right">{formatCurrency(line.total)}</td>
+                      <td className="p-2 text-right">{formatCurrency(line.lineTotal)}</td>
                       <td className="p-2">{line.analyticalAccount ? `${line.analyticalAccount.code}` : '-'}</td>
                     </tr>
                   ))}
@@ -637,7 +694,7 @@ export default function PurchaseOrdersPage() {
                 <tfoot className="font-bold">
                   <tr>
                     <td colSpan={3} className="p-2 text-right">Total:</td>
-                    <td className="p-2 text-right">{formatCurrency(viewingOrder.total)}</td>
+                    <td className="p-2 text-right">{formatCurrency(viewingOrder.totalAmount)}</td>
                     <td></td>
                   </tr>
                 </tfoot>
