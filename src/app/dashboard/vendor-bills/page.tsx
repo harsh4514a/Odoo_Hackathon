@@ -414,6 +414,14 @@ export default function VendorBillsPage() {
                               <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                             </button>
                             
+                            <button
+                              onClick={() => printBill(bill)}
+                              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                              title="Print Bill"
+                            >
+                              <Printer className="w-4 h-4 text-blue-600" />
+                            </button>
+                            
                             {bill.status !== 'CANCELLED' && paymentStatus !== 'PAID' && (
                               <button
                                 onClick={() => openPaymentModal(bill)}
@@ -544,8 +552,15 @@ export default function VendorBillsPage() {
             )}
             
             {/* Action buttons in view modal */}
-            {(viewingBill.status === 'POSTED' || viewingBill.status === 'CONFIRMED') && getPaymentStatus(viewingBill) !== 'PAID' && (
-              <div className="flex justify-end pt-4 border-t">
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <button
+                onClick={() => printBill(viewingBill)}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print Bill
+              </button>
+              {(viewingBill.status === 'POSTED' || viewingBill.status === 'CONFIRMED') && getPaymentStatus(viewingBill) !== 'PAID' && (
                 <button
                   onClick={() => {
                     setIsViewModalOpen(false);
@@ -556,8 +571,8 @@ export default function VendorBillsPage() {
                   <CreditCard className="w-4 h-4" />
                   Pay Bill
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </Modal>
